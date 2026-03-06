@@ -2,6 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
+
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.security import (
@@ -14,6 +18,7 @@ from app.core.security import (
 from app.models.user import User
 from app.schemas.models import (
     AuthResponse,
+    GoogleAuthRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -53,8 +58,78 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
+
+    tokens = TokenResponse(
+        access_token=create_access_token(str(user.id)),
+        refresh_token=create_refresh_token(str(user.id)),
+        expires_in=900,
+    )
+    return AuthResponse(user=UserResponse.model_validate(user), tokens=tokens)
+
+
+@router.post("/google", response_model=AuthResponse)
+async def google_auth(body: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+    """Sign in or sign up with a Google ID token (from Google Sign-In)."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Google login is not configured",
+        )
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            body.credential,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google token",
+        )
+
+    google_id: str = idinfo["sub"]
+    email: str = idinfo.get("email", "")
+    name: str = idinfo.get("name", email.split("@")[0])
+    picture: str | None = idinfo.get("picture")
+
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account has no email",
+        )
+
+    # Look up by google_id first, then by email
+    result = await db.execute(select(User).where(User.google_id == google_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        # Check if email already exists (link accounts)
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+
+        if user:
+            # Link Google to existing email account
+            user.google_id = google_id
+            if not user.avatar_url and picture:
+                user.avatar_url = picture
+        else:
+            # Create new user
+            user = User(
+                email=email,
+                display_name=name,
+                google_id=google_id,
+                avatar_url=picture,
+            )
+            db.add(user)
+
+        await db.commit()
+        await db.refresh(user)
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")

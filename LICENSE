@@ -1,0 +1,80 @@
+Source-Available Proprietary License
+Copyright (c) 2026 Speaking App. All rights reserved.
+
+1. DEFINITIONS
+
+   "Software" means the source code, object code, documentation, and all
+   associated files in this repository.
+
+   "Owner" means the original copyright holder of this Software.
+
+   "Contributor" means any person who submits changes, improvements, or
+   additions to this Software.
+
+2. PERMISSIONS
+
+   You ARE permitted to:
+
+   a) View and read the source code for personal, educational, or
+      evaluation purposes.
+
+   b) Fork this repository for the sole purpose of submitting
+      contributions (pull requests) back to the original repository.
+
+   c) Run the Software locally for personal, non-commercial use.
+
+3. RESTRICTIONS
+
+   You are NOT permitted to:
+
+   a) Copy, reproduce, or redistribute the Software or any substantial
+      portion of it, in any form, without prior written permission from
+      the Owner.
+
+   b) Use the Software, in whole or in part, to create derivative works,
+      competing products, or services, whether commercial or otherwise.
+
+   c) Sell, sublicense, lease, or otherwise commercially exploit the
+      Software without a separate written commercial license from the
+      Owner.
+
+   d) Remove, alter, or obscure this license notice or any copyright
+      notices contained in the Software.
+
+   e) Claim ownership of the Software or misrepresent the origin of the
+      source code.
+
+4. CONTRIBUTIONS
+
+   By submitting a contribution (pull request, patch, issue, or any other
+   form of modification) to this repository, you:
+
+   a) Grant the Owner a perpetual, worldwide, non-exclusive, royalty-free,
+      irrevocable license to use, reproduce, modify, distribute, and
+      sublicense your contribution as part of the Software.
+
+   b) Confirm that your contribution is your original work or that you have
+      the right to submit it under these terms.
+
+   c) Understand that your contribution will be subject to this same
+      license.
+
+5. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE.
+
+6. TERMINATION
+
+   Any rights granted under this license terminate automatically if you
+   violate any of its terms. Upon termination, you must destroy all copies
+   of the Software in your possession.
+
+7. CONTACT
+
+   For commercial licensing, partnership inquiries, or permission requests,
+   contact the Owner through the repository's issue tracker or the contact
+   information provided in the repository.

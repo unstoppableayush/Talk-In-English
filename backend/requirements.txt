@@ -31,6 +31,9 @@ celery[redis]==5.4.*
 # HTTP client (for inter-service calls)
 httpx==0.28.*
 
+# Google OAuth
+google-auth==2.37.*
+
 # Utilities
 python-dotenv==1.0.*
 structlog==24.4.*
