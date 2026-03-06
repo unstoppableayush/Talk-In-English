@@ -1,8 +1,23 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { AuthResponse } from '@/types';
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: Record<string, unknown>) => void;
+          renderButton: (el: HTMLElement, config: Record<string, unknown>) => void;
+        };
+      };
+    };
+  }
+}
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
 export default function RegisterPage() {
   const [displayName, setDisplayName] = useState('');
@@ -12,6 +27,41 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  const handleGoogleResponse = useCallback(
+    async (response: { credential: string }) => {
+      setError('');
+      setLoading(true);
+      try {
+        const { data } = await api.post<AuthResponse>('/auth/google', {
+          credential: response.credential,
+        });
+        setAuth(data.user, data.tokens.access_token, data.tokens.refresh_token);
+        navigate('/');
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        setError(msg || 'Google sign-up failed');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setAuth, navigate],
+  );
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !window.google || !googleBtnRef.current) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleResponse,
+    });
+    window.google.accounts.id.renderButton(googleBtnRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: '100%',
+      text: 'signup_with',
+    });
+  }, [handleGoogleResponse]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +122,17 @@ export default function RegisterPage() {
       >
         {loading ? 'Creating account…' : 'Register'}
       </button>
+
+      {GOOGLE_CLIENT_ID && (
+        <>
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gray-200" />
+            <span className="text-xs text-gray-400">or</span>
+            <div className="h-px flex-1 bg-gray-200" />
+          </div>
+          <div ref={googleBtnRef} className="flex justify-center" />
+        </>
+      )}
 
       <p className="text-center text-sm text-gray-500">
         Already have an account?{' '}
