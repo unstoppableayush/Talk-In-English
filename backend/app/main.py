@@ -1,7 +1,9 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.logging_config import setup_logging
@@ -16,13 +18,48 @@ from app.ws import router as ws_router
 from app.ws.connection_manager import manager
 
 
+async def _ensure_tables():
+    """Create PostgreSQL schemas and all tables if they don't already exist."""
+    from app.core.database import engine
+    from app.models.user import Base
+    # Import all models so Base.metadata knows about them
+    import app.models  # noqa: F401
+
+    async with engine.begin() as conn:
+        for schema in ("auth", "sessions", "eval", "ai"):
+            await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+        await conn.run_sync(Base.metadata.create_all)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────
     setup_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("Starting Speaking App...")
+    logger.info("Environment: %s", settings.ENVIRONMENT)
+    logger.info("Database host: %s", settings.DATABASE_URL.split("@")[-1])
+    logger.info("CORS origins: %s", settings.CORS_ORIGINS)
+
+    # ── Auto-create schemas & tables if missing ───────────────
+    try:
+        await _ensure_tables()
+        logger.info("Database schemas and tables ensured")
+    except Exception:
+        logger.exception("Failed to auto-create database tables")
+
     if settings.REDIS_URL:
-        await manager.enable_redis(settings.REDIS_URL)
+        try:
+            logger.info("Connecting to Redis...")
+            await manager.enable_redis(settings.REDIS_URL)
+            logger.info("Redis connected successfully")
+        except Exception:
+            logger.exception("Failed to connect to Redis — falling back to in-memory broadcast")
+    else:
+        logger.warning("REDIS_URL not set — using in-memory broadcast")
+    logger.info("Startup complete")
     yield
+    logger.info("Shutting down...")
     # ── Shutdown ──────────────────────────────────────────────
 
 

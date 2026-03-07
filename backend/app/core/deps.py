@@ -1,3 +1,4 @@
+import logging
 from functools import wraps
 from typing import Callable
 
@@ -10,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
 security_scheme = HTTPBearer()
 
 
@@ -17,18 +19,27 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    payload = decode_token(credentials.credentials)
-    if payload is None or payload.get("type") != "access":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    try:
+        payload = decode_token(credentials.credentials)
+        if payload is None or payload.get("type") != "access":
+            logger.warning("Invalid access token presented")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    user_id = payload.get("sub")
-    result = await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))
-    user = result.scalar_one_or_none()
+        user_id = payload.get("sub")
+        logger.debug("Authenticating user_id=%s", user_id)
+        result = await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))
+        user = result.scalar_one_or_none()
 
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        if user is None:
+            logger.warning("User not found or inactive: user_id=%s", user_id)
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    return user
+        return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error in get_current_user")
+        raise HTTPException(status_code=500, detail=f"Internal server error during authentication: {e}")
 
 
 def require_role(*allowed_roles: str) -> Callable:

@@ -137,61 +137,68 @@ async def ws_roleplay(
                 if not content:
                     continue
 
-                # Persist user message
-                async with async_session() as db:
-                    user_msg = RoleplayMessage(
-                        session_id=session_id, sender="user", content=content
-                    )
-                    db.add(user_msg)
-                    await db.commit()
-                    await db.refresh(user_msg)
+                try:
+                    # Persist user message
+                    async with async_session() as db:
+                        user_msg = RoleplayMessage(
+                            session_id=session_id, sender="user", content=content
+                        )
+                        db.add(user_msg)
+                        await db.commit()
+                        await db.refresh(user_msg)
 
-                # Generate AI reply
-                ai_text = await roleplay_engine.generate_reply(session_id, content)
+                    # Generate AI reply
+                    ai_text = await roleplay_engine.generate_reply(session_id, content)
 
-                # Persist AI message
-                async with async_session() as db:
-                    ai_msg = RoleplayMessage(
-                        session_id=session_id, sender="ai", content=ai_text
-                    )
-                    db.add(ai_msg)
-                    await db.commit()
-                    await db.refresh(ai_msg)
+                    # Persist AI message
+                    async with async_session() as db:
+                        ai_msg = RoleplayMessage(
+                            session_id=session_id, sender="ai", content=ai_text
+                        )
+                        db.add(ai_msg)
+                        await db.commit()
+                        await db.refresh(ai_msg)
 
-                await ws.send_json({
-                    "event": "roleplay.ai_reply",
-                    "data": {
-                        "id": str(ai_msg.id),
-                        "content": ai_text,
-                        "created_at": ai_msg.created_at.isoformat(),
-                    },
-                })
+                    await ws.send_json({
+                        "event": "roleplay.ai_reply",
+                        "data": {
+                            "id": str(ai_msg.id),
+                            "content": ai_text,
+                            "created_at": ai_msg.created_at.isoformat(),
+                        },
+                    })
+                except Exception:
+                    logger.exception("Error handling roleplay message session=%s", session_id)
+                    await ws.send_json({"event": "error", "data": {"message": "Failed to process message"}})
 
             elif event == "roleplay.end":
                 # End session
-                async with async_session() as db:
-                    result = await db.execute(
-                        select(RoleplaySession).where(RoleplaySession.id == session_id)
-                    )
-                    sess = result.scalar_one_or_none()
-                    if sess and sess.status == "active":
-                        now = datetime.now(timezone.utc)
-                        sess.status = "completed"
-                        sess.ended_at = now
-                        if sess.started_at:
-                            sess.duration_sec = int((now - sess.started_at).total_seconds())
-                        await db.commit()
+                try:
+                    async with async_session() as db:
+                        result = await db.execute(
+                            select(RoleplaySession).where(RoleplaySession.id == session_id)
+                        )
+                        sess = result.scalar_one_or_none()
+                        if sess and sess.status == "active":
+                            now = datetime.now(timezone.utc)
+                            sess.status = "completed"
+                            sess.ended_at = now
+                            if sess.started_at:
+                                sess.duration_sec = int((now - sess.started_at).total_seconds())
+                            await db.commit()
 
-                roleplay_engine.remove_context(session_id)
+                    roleplay_engine.remove_context(session_id)
 
-                await ws.send_json({
-                    "event": "roleplay.ended",
-                    "data": {"session_id": session_id, "status": "completed"},
-                })
+                    await ws.send_json({
+                        "event": "roleplay.ended",
+                        "data": {"session_id": session_id, "status": "completed"},
+                    })
 
-                # Trigger evaluation (fire and forget via import)
-                import asyncio
-                asyncio.create_task(roleplay_engine.evaluate_session(session_id))
+                    # Trigger evaluation (fire and forget via import)
+                    import asyncio
+                    asyncio.create_task(roleplay_engine.evaluate_session(session_id))
+                except Exception:
+                    logger.exception("Error ending roleplay session=%s via WS", session_id)
                 break
 
             elif event == "system.ping":

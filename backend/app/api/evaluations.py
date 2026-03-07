@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,7 @@ from app.models.user import User
 from app.schemas.models import AIFeedbackResponse, SessionScoreResponse
 from app.services.ai_service import scoring_engine
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -20,8 +23,13 @@ async def trigger_evaluation(
     user: User = Depends(get_current_user),
 ):
     """Trigger AI evaluation for a completed session (runs in background)."""
-    background_tasks.add_task(scoring_engine.evaluate_session, session_id)
-    return {"status": "accepted", "message": "Evaluation started"}
+    try:
+        logger.info("Triggering evaluation for session=%s by user=%s", session_id, user.id)
+        background_tasks.add_task(scoring_engine.evaluate_session, session_id)
+        return {"status": "accepted", "message": "Evaluation started"}
+    except Exception as e:
+        logger.exception("Error triggering evaluation for session=%s", session_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/sessions/{session_id}/score", response_model=SessionScoreResponse)
@@ -30,16 +38,22 @@ async def get_session_score(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(SessionScore).where(
-            SessionScore.session_id == session_id,
-            SessionScore.user_id == user.id,
+    try:
+        result = await db.execute(
+            select(SessionScore).where(
+                SessionScore.session_id == session_id,
+                SessionScore.user_id == user.id,
+            )
         )
-    )
-    score = result.scalar_one_or_none()
-    if not score:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Score not found")
-    return SessionScoreResponse.model_validate(score)
+        score = result.scalar_one_or_none()
+        if not score:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Score not found")
+        return SessionScoreResponse.model_validate(score)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting score for session=%s", session_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/sessions/{session_id}/feedback", response_model=AIFeedbackResponse)
@@ -48,16 +62,22 @@ async def get_session_feedback(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(AIFeedbackReport).where(
-            AIFeedbackReport.session_id == session_id,
-            AIFeedbackReport.user_id == user.id,
+    try:
+        result = await db.execute(
+            select(AIFeedbackReport).where(
+                AIFeedbackReport.session_id == session_id,
+                AIFeedbackReport.user_id == user.id,
+            )
         )
-    )
-    feedback = result.scalar_one_or_none()
-    if not feedback:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback not found")
-    return AIFeedbackResponse.model_validate(feedback)
+        feedback = result.scalar_one_or_none()
+        if not feedback:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback not found")
+        return AIFeedbackResponse.model_validate(feedback)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting feedback for session=%s", session_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/history", response_model=list[SessionScoreResponse])
@@ -67,12 +87,16 @@ async def get_score_history(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(SessionScore)
-        .where(SessionScore.user_id == user.id)
-        .order_by(SessionScore.scored_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-    )
-    scores = result.scalars().all()
-    return [SessionScoreResponse.model_validate(s) for s in scores]
+    try:
+        result = await db.execute(
+            select(SessionScore)
+            .where(SessionScore.user_id == user.id)
+            .order_by(SessionScore.scored_at.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+        )
+        scores = result.scalars().all()
+        return [SessionScoreResponse.model_validate(s) for s in scores]
+    except Exception as e:
+        logger.exception("Error getting score history")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")

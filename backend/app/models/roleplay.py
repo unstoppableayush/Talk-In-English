@@ -44,7 +44,7 @@ class RoleplayScenario(TimestampMixin, Base):
     starting_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     expected_topics: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"))
 
 
 class RoleplaySession(TimestampMixin, Base):
@@ -59,7 +59,7 @@ class RoleplaySession(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False
     )
     scenario_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ai.roleplay_scenarios.id")
@@ -119,7 +119,7 @@ class RoleplayEvaluation(TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("ai.roleplay_sessions.id", ondelete="CASCADE"), nullable=False, unique=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False
     )
     fluency_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     grammar_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

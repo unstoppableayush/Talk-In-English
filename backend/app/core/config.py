@@ -21,13 +21,14 @@ class Settings(BaseSettings):
     # AI — LLM providers (all optional; first available is used)
     OPENAI_API_KEY: str = ""
     GROK_API_KEY: str = ""        # xAI Grok
+    GROQ_API_KEY: str = ""        # Groq (fast inference)
     GEMINI_API_KEY: str = ""      # Google Gemini
     DEEPSEEK_API_KEY: str = ""    # DeepSeek
     ANTHROPIC_API_KEY: str = ""
 
     # Provider priority order (comma-separated). First available key wins.
     # e.g. "openai,grok,gemini,deepseek"
-    LLM_PROVIDER_ORDER: str = "openai,grok,gemini,deepseek"
+    LLM_PROVIDER_ORDER: str = "openai,groq,grok,gemini,deepseek"
 
     # TTS provider priority: "elevenlabs,openai"
     TTS_PROVIDER_ORDER: str = "elevenlabs,openai"

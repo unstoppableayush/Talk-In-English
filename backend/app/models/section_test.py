@@ -43,7 +43,7 @@ class SectionTest(TimestampMixin, Base):
     # [{"id": "q1", "type": "audio_prompt", "prompt": "...", "rubric": "..."}]
     questions: Mapped[dict] = mapped_column(JSONB, nullable=False, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"))
 
 
 class TestAttempt(Base):
@@ -63,7 +63,7 @@ class TestAttempt(Base):
     test_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("eval.section_tests.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False)
 
     # Ordered list matching questions: [{"question_id": "q1", "answer": "...", "audio_url": "..."}]
     answers: Mapped[dict] = mapped_column(JSONB, nullable=False, default=list)

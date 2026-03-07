@@ -36,7 +36,7 @@ class Room(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
     max_speakers: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
-    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
@@ -58,7 +58,7 @@ class Session(Base):
     room_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("sessions.rooms.id"))
     mode: Mapped[str] = mapped_column(String(20), nullable=False)  # ai_1on1, peer_1on1, public_room
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="waiting")
-    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False)
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
     topic: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -88,7 +88,7 @@ class RoomParticipant(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sessions.sessions.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="speaker")
     # role: speaker | listener
     joined_at: Mapped[datetime] = mapped_column(

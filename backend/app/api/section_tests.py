@@ -43,23 +43,27 @@ async def create_test(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new section test (admin only)."""
-    test = SectionTest(
-        title=body.title,
-        description=body.description,
-        section=body.section,
-        difficulty_level=body.difficulty_level,
-        language=body.language,
-        time_limit_sec=body.time_limit_sec,
-        pass_threshold=body.pass_threshold,
-        questions=body.questions,
-        created_by=user.id,
-    )
-    db.add(test)
-    await db.commit()
-    await db.refresh(test)
-    resp = SectionTestResponse.model_validate(test)
-    resp.question_count = len(test.questions) if isinstance(test.questions, list) else 0
-    return resp
+    try:
+        test = SectionTest(
+            title=body.title,
+            description=body.description,
+            section=body.section,
+            difficulty_level=body.difficulty_level,
+            language=body.language,
+            time_limit_sec=body.time_limit_sec,
+            pass_threshold=body.pass_threshold,
+            questions=body.questions,
+            created_by=user.id,
+        )
+        db.add(test)
+        await db.commit()
+        await db.refresh(test)
+        resp = SectionTestResponse.model_validate(test)
+        resp.question_count = len(test.questions) if isinstance(test.questions, list) else 0
+        return resp
+    except Exception as e:
+        logger.exception("Error creating test")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("", response_model=list[SectionTestResponse])
@@ -73,23 +77,27 @@ async def list_tests(
     db: AsyncSession = Depends(get_db),
 ):
     """List available tests with optional filters."""
-    query = select(SectionTest).where(
-        SectionTest.is_active.is_(True),
-        SectionTest.language == language,
-    )
-    if section:
-        query = query.where(SectionTest.section == section)
-    if difficulty:
-        query = query.where(SectionTest.difficulty_level == difficulty)
-    query = query.order_by(SectionTest.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
-    result = await db.execute(query)
-    tests = result.scalars().all()
-    out = []
-    for t in tests:
-        r = SectionTestResponse.model_validate(t)
-        r.question_count = len(t.questions) if isinstance(t.questions, list) else 0
-        out.append(r)
-    return out
+    try:
+        query = select(SectionTest).where(
+            SectionTest.is_active.is_(True),
+            SectionTest.language == language,
+        )
+        if section:
+            query = query.where(SectionTest.section == section)
+        if difficulty:
+            query = query.where(SectionTest.difficulty_level == difficulty)
+        query = query.order_by(SectionTest.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+        result = await db.execute(query)
+        tests = result.scalars().all()
+        out = []
+        for t in tests:
+            r = SectionTestResponse.model_validate(t)
+            r.question_count = len(t.questions) if isinstance(t.questions, list) else 0
+            out.append(r)
+        return out
+    except Exception as e:
+        logger.exception("Error listing tests")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/{test_id}", response_model=SectionTestResponse)
@@ -98,13 +106,19 @@ async def get_test(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(SectionTest).where(SectionTest.id == test_id))
-    test = result.scalar_one_or_none()
-    if not test:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
-    resp = SectionTestResponse.model_validate(test)
-    resp.question_count = len(test.questions) if isinstance(test.questions, list) else 0
-    return resp
+    try:
+        result = await db.execute(select(SectionTest).where(SectionTest.id == test_id))
+        test = result.scalar_one_or_none()
+        if not test:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+        resp = SectionTestResponse.model_validate(test)
+        resp.question_count = len(test.questions) if isinstance(test.questions, list) else 0
+        return resp
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting test=%s", test_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -148,32 +162,36 @@ async def submit_attempt(
     db: AsyncSession = Depends(get_db),
 ):
     """Submit answers for a test. AI grades in the background."""
-    # Load test
-    result = await db.execute(select(SectionTest).where(SectionTest.id == body.test_id))
-    test = result.scalar_one_or_none()
-    if not test or not test.is_active:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found or inactive")
+    try:
+        # Load test
+        result = await db.execute(select(SectionTest).where(SectionTest.id == body.test_id))
+        test = result.scalar_one_or_none()
+        if not test or not test.is_active:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found or inactive")
 
-    # Enforce time limit if set
-    # (Client sends started_at; server-side validation is a safety check)
-    now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
 
-    attempt = TestAttempt(
-        test_id=test.id,
-        user_id=user.id,
-        answers=body.answers,
-        started_at=now,
-    )
-    db.add(attempt)
-    await db.commit()
-    await db.refresh(attempt)
+        attempt = TestAttempt(
+            test_id=test.id,
+            user_id=user.id,
+            answers=body.answers,
+            started_at=now,
+        )
+        db.add(attempt)
+        await db.commit()
+        await db.refresh(attempt)
 
-    # Grade in background
-    background_tasks.add_task(
-        _grade_attempt, str(attempt.id), str(test.id)
-    )
+        # Grade in background
+        background_tasks.add_task(
+            _grade_attempt, str(attempt.id), str(test.id)
+        )
 
-    return TestAttemptResponse.model_validate(attempt)
+        return TestAttemptResponse.model_validate(attempt)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error submitting attempt")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/attempts/{attempt_id}", response_model=TestAttemptResponse)
@@ -182,13 +200,19 @@ async def get_attempt(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(TestAttempt).where(TestAttempt.id == attempt_id, TestAttempt.user_id == user.id)
-    )
-    attempt = result.scalar_one_or_none()
-    if not attempt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
-    return TestAttemptResponse.model_validate(attempt)
+    try:
+        result = await db.execute(
+            select(TestAttempt).where(TestAttempt.id == attempt_id, TestAttempt.user_id == user.id)
+        )
+        attempt = result.scalar_one_or_none()
+        if not attempt:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+        return TestAttemptResponse.model_validate(attempt)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting attempt=%s", attempt_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/attempts", response_model=list[TestAttemptResponse])
@@ -199,13 +223,17 @@ async def list_my_attempts(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(TestAttempt).where(TestAttempt.user_id == user.id)
-    if test_id:
-        query = query.where(TestAttempt.test_id == test_id)
-    query = query.order_by(TestAttempt.started_at.desc()).offset((page - 1) * per_page).limit(per_page)
-    result = await db.execute(query)
-    attempts = result.scalars().all()
-    return [TestAttemptResponse.model_validate(a) for a in attempts]
+    try:
+        query = select(TestAttempt).where(TestAttempt.user_id == user.id)
+        if test_id:
+            query = query.where(TestAttempt.test_id == test_id)
+        query = query.order_by(TestAttempt.started_at.desc()).offset((page - 1) * per_page).limit(per_page)
+        result = await db.execute(query)
+        attempts = result.scalars().all()
+        return [TestAttemptResponse.model_validate(a) for a in attempts]
+    except Exception as e:
+        logger.exception("Error listing attempts")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -262,7 +290,7 @@ async def _grade_attempt(attempt_id: str, test_id: str) -> None:
                 if raw.endswith("```"):
                     raw = raw[:-3]
             result = json.loads(raw)
-        except Exception:
+        except Exception as e:
             logger.exception("AI grading failed for attempt %s", attempt_id)
             return
 
