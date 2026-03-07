@@ -153,6 +153,54 @@ class GrokProvider(LLMProvider):
                 yield chunk.choices[0].delta.content
 
 
+class GroqProvider(LLMProvider):
+    """Groq — ultra-fast inference, OpenAI-compatible API."""
+
+    def __init__(self) -> None:
+        self.client = AsyncOpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        self.name = "groq"
+
+    async def complete(self, messages: list[dict], config: LLMConfig) -> LLMResponse:
+        if config.system_prompt:
+            messages = [{"role": "system", "content": config.system_prompt}, *messages]
+
+        model = "llama-3.3-70b-versatile"
+        start = time.monotonic()
+        response = await self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        )
+        latency = int((time.monotonic() - start) * 1000)
+
+        return LLMResponse(
+            content=response.choices[0].message.content or "",
+            prompt_tokens=response.usage.prompt_tokens if response.usage else 0,
+            completion_tokens=response.usage.completion_tokens if response.usage else 0,
+            model=model,
+            latency_ms=latency,
+        )
+
+    async def stream(self, messages: list[dict], config: LLMConfig) -> AsyncIterator[str]:
+        if config.system_prompt:
+            messages = [{"role": "system", "content": config.system_prompt}, *messages]
+
+        response = await self.client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            stream=True,
+        )
+        async for chunk in response:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+
 class GeminiProvider(LLMProvider):
     """Google Gemini — uses OpenAI-compatible endpoint."""
 
@@ -253,6 +301,7 @@ class DeepSeekProvider(LLMProvider):
 
 _PROVIDER_MAP: dict[str, tuple[str, type[LLMProvider]]] = {
     "openai": ("OPENAI_API_KEY", OpenAIProvider),
+    "groq": ("GROQ_API_KEY", GroqProvider),
     "grok": ("GROK_API_KEY", GrokProvider),
     "gemini": ("GEMINI_API_KEY", GeminiProvider),
     "deepseek": ("DEEPSEEK_API_KEY", DeepSeekProvider),

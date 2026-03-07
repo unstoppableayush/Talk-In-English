@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -21,6 +22,7 @@ from app.schemas.models import (
 )
 from app.services.ai_service import scoring_engine
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -33,20 +35,26 @@ async def create_room(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new room (public, private, or 1-on-1)."""
-    room = Room(
-        name=body.name,
-        room_type=body.room_type,
-        topic=body.topic,
-        description=body.description,
-        language=body.language,
-        max_speakers=2 if body.room_type == "one_on_one" else body.max_speakers,
-        created_by=user.id,
-        config=body.config.model_dump(),
-    )
-    db.add(room)
-    await db.commit()
-    await db.refresh(room)
-    return RoomResponse.model_validate(room)
+    try:
+        logger.info("Creating room name=%s type=%s user=%s", body.name, body.room_type, user.id)
+        room = Room(
+            name=body.name,
+            room_type=body.room_type,
+            topic=body.topic,
+            description=body.description,
+            language=body.language,
+            max_speakers=2 if body.room_type == "one_on_one" else body.max_speakers,
+            created_by=user.id,
+            config=body.config.model_dump(),
+        )
+        db.add(room)
+        await db.commit()
+        await db.refresh(room)
+        logger.info("Room created id=%s", room.id)
+        return RoomResponse.model_validate(room)
+    except Exception as e:
+        logger.exception("Error creating room")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("", response_model=list[RoomResponse])
@@ -58,13 +66,17 @@ async def list_rooms(
     _user: User = Depends(get_current_user),
 ):
     """List active rooms. Public rooms visible to all; filter by type."""
-    query = select(Room).where(Room.is_active.is_(True))
-    if room_type:
-        query = query.where(Room.room_type == room_type)
-    query = query.order_by(Room.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
-    result = await db.execute(query)
-    rooms = result.scalars().all()
-    return [RoomResponse.model_validate(r) for r in rooms]
+    try:
+        query = select(Room).where(Room.is_active.is_(True))
+        if room_type:
+            query = query.where(Room.room_type == room_type)
+        query = query.order_by(Room.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+        result = await db.execute(query)
+        rooms = result.scalars().all()
+        return [RoomResponse.model_validate(r) for r in rooms]
+    except Exception as e:
+        logger.exception("Error listing rooms")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.get("/{room_id}", response_model=RoomResponse)
@@ -73,11 +85,17 @@ async def get_room(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Room).where(Room.id == room_id))
-    room = result.scalar_one_or_none()
-    if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    return RoomResponse.model_validate(room)
+    try:
+        result = await db.execute(select(Room).where(Room.id == room_id))
+        room = result.scalar_one_or_none()
+        if not room:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        return RoomResponse.model_validate(room)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -86,14 +104,21 @@ async def deactivate_room(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Room).where(Room.id == room_id))
-    room = result.scalar_one_or_none()
-    if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    if room.created_by != user.id and user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only room owner or admin can delete")
-    room.is_active = False
-    await db.commit()
+    try:
+        logger.info("Deactivating room=%s by user=%s", room_id, user.id)
+        result = await db.execute(select(Room).where(Room.id == room_id))
+        room = result.scalar_one_or_none()
+        if not room:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        if room.created_by != user.id and user.role != "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only room owner or admin can delete")
+        room.is_active = False
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error deactivating room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # ── Join / Leave Room (via Session) ────────────────────────────
@@ -106,69 +131,77 @@ async def join_room(
     db: AsyncSession = Depends(get_db),
 ):
     """Join the active session for this room (or create one)."""
-    result = await db.execute(select(Room).where(Room.id == room_id, Room.is_active.is_(True)))
-    room = result.scalar_one_or_none()
-    if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    try:
+        logger.info("User %s joining room %s as %s", user.id, room_id, body.role)
+        result = await db.execute(select(Room).where(Room.id == room_id, Room.is_active.is_(True)))
+        room = result.scalar_one_or_none()
+        if not room:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
-    # Find or create an active session for this room
-    session_result = await db.execute(
-        select(Session).where(
-            Session.room_id == room.id,
-            Session.status.in_(("waiting", "active")),
-        ).order_by(Session.created_at.desc()).limit(1)
-    )
-    session = session_result.scalar_one_or_none()
-
-    if not session:
-        session = Session(
-            room_id=room.id,
-            mode="public_room" if room.room_type == "public" else (
-                "ai_1on1" if room.room_type == "one_on_one" else "peer_1on1"
-            ),
-            created_by=user.id,
-            language=room.language,
-            topic=room.topic,
-            started_at=datetime.now(timezone.utc),
-            status="active",
+        # Find or create an active session for this room
+        session_result = await db.execute(
+            select(Session).where(
+                Session.room_id == room.id,
+                Session.status.in_(("waiting", "active")),
+            ).order_by(Session.created_at.desc()).limit(1)
         )
-        db.add(session)
-        await db.flush()
+        session = session_result.scalar_one_or_none()
 
-    # Check if already joined
-    existing = await db.execute(
-        select(RoomParticipant).where(
-            RoomParticipant.session_id == session.id,
-            RoomParticipant.user_id == user.id,
-            RoomParticipant.is_active.is_(True),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already in this room")
+        if not session:
+            session = Session(
+                room_id=room.id,
+                mode="public_room" if room.room_type == "public" else (
+                    "ai_1on1" if room.room_type == "one_on_one" else "peer_1on1"
+                ),
+                created_by=user.id,
+                language=room.language,
+                topic=room.topic,
+                started_at=datetime.now(timezone.utc),
+                status="active",
+            )
+            db.add(session)
+            await db.flush()
 
-    # Speaker capacity check
-    if body.role == "speaker":
-        count_result = await db.execute(
-            select(func.count()).where(
+        # Check if already joined
+        existing = await db.execute(
+            select(RoomParticipant).where(
                 RoomParticipant.session_id == session.id,
-                RoomParticipant.role == "speaker",
+                RoomParticipant.user_id == user.id,
                 RoomParticipant.is_active.is_(True),
             )
         )
-        speaker_count = count_result.scalar()
-        if speaker_count >= room.max_speakers:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Room is full ({room.max_speakers} speakers max)",
-            )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already in this room")
 
-    participant = RoomParticipant(
-        session_id=session.id, user_id=user.id, role=body.role,
-    )
-    db.add(participant)
-    await db.commit()
-    await db.refresh(participant)
-    return ParticipantResponse.model_validate(participant)
+        # Speaker capacity check
+        if body.role == "speaker":
+            count_result = await db.execute(
+                select(func.count()).where(
+                    RoomParticipant.session_id == session.id,
+                    RoomParticipant.role == "speaker",
+                    RoomParticipant.is_active.is_(True),
+                )
+            )
+            speaker_count = count_result.scalar()
+            if speaker_count >= room.max_speakers:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Room is full ({room.max_speakers} speakers max)",
+                )
+
+        participant = RoomParticipant(
+            session_id=session.id, user_id=user.id, role=body.role,
+        )
+        db.add(participant)
+        await db.commit()
+        await db.refresh(participant)
+        logger.info("User %s joined room %s", user.id, room_id)
+        return ParticipantResponse.model_validate(participant)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error joining room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @router.post("/{room_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
@@ -178,30 +211,37 @@ async def leave_room(
     db: AsyncSession = Depends(get_db),
 ):
     """Leave the active session for this room."""
-    session_result = await db.execute(
-        select(Session).where(
-            Session.room_id == room_id,
-            Session.status.in_(("waiting", "active")),
-        ).order_by(Session.created_at.desc()).limit(1)
-    )
-    session = session_result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
-
-    part_result = await db.execute(
-        select(RoomParticipant).where(
-            RoomParticipant.session_id == session.id,
-            RoomParticipant.user_id == user.id,
-            RoomParticipant.is_active.is_(True),
+    try:
+        logger.info("User %s leaving room %s", user.id, room_id)
+        session_result = await db.execute(
+            select(Session).where(
+                Session.room_id == room_id,
+                Session.status.in_(("waiting", "active")),
+            ).order_by(Session.created_at.desc()).limit(1)
         )
-    )
-    participant = part_result.scalar_one_or_none()
-    if not participant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not in this room")
+        session = session_result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
 
-    participant.is_active = False
-    participant.left_at = datetime.now(timezone.utc)
-    await db.commit()
+        part_result = await db.execute(
+            select(RoomParticipant).where(
+                RoomParticipant.session_id == session.id,
+                RoomParticipant.user_id == user.id,
+                RoomParticipant.is_active.is_(True),
+            )
+        )
+        participant = part_result.scalar_one_or_none()
+        if not participant:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not in this room")
+
+        participant.is_active = False
+        participant.left_at = datetime.now(timezone.utc)
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error leaving room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # ── End Session ────────────────────────────────────────────────
@@ -215,48 +255,56 @@ async def end_room_session(
 ):
     """End the active session for this room. Only the room creator or admin can end it.
     Automatically triggers AI evaluation for peer_1on1 (silent monitoring) and public_room sessions."""
-    room_result = await db.execute(select(Room).where(Room.id == room_id))
-    room = room_result.scalar_one_or_none()
-    if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    if room.created_by != user.id and user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only room owner or admin can end session")
+    try:
+        logger.info("Ending room session room=%s by user=%s", room_id, user.id)
+        room_result = await db.execute(select(Room).where(Room.id == room_id))
+        room = room_result.scalar_one_or_none()
+        if not room:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        if room.created_by != user.id and user.role != "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only room owner or admin can end session")
 
-    session_result = await db.execute(
-        select(Session).where(
-            Session.room_id == room.id,
-            Session.status.in_(("waiting", "active")),
-        ).order_by(Session.created_at.desc()).limit(1)
-    )
-    session = session_result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
-
-    now = datetime.now(timezone.utc)
-    session.status = "completed"
-    session.ended_at = now
-    if session.started_at:
-        session.duration_sec = int((now - session.started_at).total_seconds())
-
-    # Mark all active participants as left
-    parts_result = await db.execute(
-        select(RoomParticipant).where(
-            RoomParticipant.session_id == session.id,
-            RoomParticipant.is_active.is_(True),
+        session_result = await db.execute(
+            select(Session).where(
+                Session.room_id == room.id,
+                Session.status.in_(("waiting", "active")),
+            ).order_by(Session.created_at.desc()).limit(1)
         )
-    )
-    for p in parts_result.scalars().all():
-        p.is_active = False
-        p.left_at = now
+        session = session_result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
 
-    await db.commit()
-    await db.refresh(session)
+        now = datetime.now(timezone.utc)
+        session.status = "completed"
+        session.ended_at = now
+        if session.started_at:
+            session.duration_sec = int((now - session.started_at).total_seconds())
 
-    # Auto-trigger AI evaluation for peer 1-on-1 (silent monitoring) and public rooms
-    if session.mode in ("peer_1on1", "public_room"):
-        background_tasks.add_task(scoring_engine.evaluate_session, str(session.id))
+        # Mark all active participants as left
+        parts_result = await db.execute(
+            select(RoomParticipant).where(
+                RoomParticipant.session_id == session.id,
+                RoomParticipant.is_active.is_(True),
+            )
+        )
+        for p in parts_result.scalars().all():
+            p.is_active = False
+            p.left_at = now
 
-    return SessionResponse.model_validate(session)
+        await db.commit()
+        await db.refresh(session)
+
+        # Auto-trigger AI evaluation for peer 1-on-1 (silent monitoring) and public rooms
+        if session.mode in ("peer_1on1", "public_room"):
+            background_tasks.add_task(scoring_engine.evaluate_session, str(session.id))
+
+        logger.info("Room session ended room=%s session=%s", room_id, session.id)
+        return SessionResponse.model_validate(session)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error ending room session room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # ── Promote Listener → Speaker ─────────────────────────────────
@@ -269,56 +317,64 @@ async def promote_to_speaker(
     db: AsyncSession = Depends(get_db),
 ):
     """Promote a listener to speaker. Only room owner, admin, or moderator can promote."""
-    room_result = await db.execute(select(Room).where(Room.id == room_id))
-    room = room_result.scalar_one_or_none()
-    if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    try:
+        logger.info("Promote request in room=%s by user=%s target=%s", room_id, user.id, body.user_id)
+        room_result = await db.execute(select(Room).where(Room.id == room_id))
+        room = room_result.scalar_one_or_none()
+        if not room:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
-    # Authorization: room owner, admin, or moderator
-    if room.created_by != user.id and user.role not in ("admin", "moderator"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to promote")
+        # Authorization: room owner, admin, or moderator
+        if room.created_by != user.id and user.role not in ("admin", "moderator"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to promote")
 
-    # Find active session
-    session_result = await db.execute(
-        select(Session).where(
-            Session.room_id == room.id,
-            Session.status.in_(("waiting", "active")),
-        ).order_by(Session.created_at.desc()).limit(1)
-    )
-    session = session_result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
-
-    # Check speaker capacity
-    count_result = await db.execute(
-        select(func.count()).where(
-            RoomParticipant.session_id == session.id,
-            RoomParticipant.role == "speaker",
-            RoomParticipant.is_active.is_(True),
+        # Find active session
+        session_result = await db.execute(
+            select(Session).where(
+                Session.room_id == room.id,
+                Session.status.in_(("waiting", "active")),
+            ).order_by(Session.created_at.desc()).limit(1)
         )
-    )
-    if count_result.scalar() >= room.max_speakers:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="All speaker slots are full")
+        session = session_result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
 
-    # Find the listener to promote
-    part_result = await db.execute(
-        select(RoomParticipant).where(
-            RoomParticipant.session_id == session.id,
-            RoomParticipant.user_id == body.user_id,
-            RoomParticipant.is_active.is_(True),
+        # Check speaker capacity
+        count_result = await db.execute(
+            select(func.count()).where(
+                RoomParticipant.session_id == session.id,
+                RoomParticipant.role == "speaker",
+                RoomParticipant.is_active.is_(True),
+            )
         )
-    )
-    participant = part_result.scalar_one_or_none()
-    if not participant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not an active participant")
-    if participant.role == "speaker":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a speaker")
+        if count_result.scalar() >= room.max_speakers:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="All speaker slots are full")
 
-    participant.role = "speaker"
-    participant.hand_raised = False
-    await db.commit()
-    await db.refresh(participant)
-    return ParticipantResponse.model_validate(participant)
+        # Find the listener to promote
+        part_result = await db.execute(
+            select(RoomParticipant).where(
+                RoomParticipant.session_id == session.id,
+                RoomParticipant.user_id == body.user_id,
+                RoomParticipant.is_active.is_(True),
+            )
+        )
+        participant = part_result.scalar_one_or_none()
+        if not participant:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not an active participant")
+        if participant.role == "speaker":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a speaker")
+
+        participant.role = "speaker"
+        participant.hand_raised = False
+        await db.commit()
+        await db.refresh(participant)
+        logger.info("Promoted user=%s in room=%s", body.user_id, room_id)
+        return ParticipantResponse.model_validate(participant)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error promoting user in room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # ── Raise Hand ─────────────────────────────────────────────────
@@ -330,32 +386,38 @@ async def raise_hand(
     db: AsyncSession = Depends(get_db),
 ):
     """Toggle hand-raised state. Listeners can raise hand to request speaker promotion."""
-    session_result = await db.execute(
-        select(Session).where(
-            Session.room_id == room_id,
-            Session.status.in_(("waiting", "active")),
-        ).order_by(Session.created_at.desc()).limit(1)
-    )
-    session = session_result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
-
-    part_result = await db.execute(
-        select(RoomParticipant).where(
-            RoomParticipant.session_id == session.id,
-            RoomParticipant.user_id == user.id,
-            RoomParticipant.is_active.is_(True),
+    try:
+        session_result = await db.execute(
+            select(Session).where(
+                Session.room_id == room_id,
+                Session.status.in_(("waiting", "active")),
+            ).order_by(Session.created_at.desc()).limit(1)
         )
-    )
-    participant = part_result.scalar_one_or_none()
-    if not participant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not in this room")
+        session = session_result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
 
-    # Toggle hand
-    participant.hand_raised = not participant.hand_raised
-    await db.commit()
+        part_result = await db.execute(
+            select(RoomParticipant).where(
+                RoomParticipant.session_id == session.id,
+                RoomParticipant.user_id == user.id,
+                RoomParticipant.is_active.is_(True),
+            )
+        )
+        participant = part_result.scalar_one_or_none()
+        if not participant:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not in this room")
 
-    return RaiseHandResponse(user_id=user.id, hand_raised=participant.hand_raised)
+        # Toggle hand
+        participant.hand_raised = not participant.hand_raised
+        await db.commit()
+
+        return RaiseHandResponse(user_id=user.id, hand_raised=participant.hand_raised)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error raising hand in room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # ── List Participants ──────────────────────────────────────────
@@ -367,20 +429,26 @@ async def list_participants(
     _user: User = Depends(get_current_user),
 ):
     """List all active participants in the room's current session."""
-    session_result = await db.execute(
-        select(Session).where(
-            Session.room_id == room_id,
-            Session.status.in_(("waiting", "active")),
-        ).order_by(Session.created_at.desc()).limit(1)
-    )
-    session = session_result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
+    try:
+        session_result = await db.execute(
+            select(Session).where(
+                Session.room_id == room_id,
+                Session.status.in_(("waiting", "active")),
+            ).order_by(Session.created_at.desc()).limit(1)
+        )
+        session = session_result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active session")
 
-    parts_result = await db.execute(
-        select(RoomParticipant).where(
-            RoomParticipant.session_id == session.id,
-            RoomParticipant.is_active.is_(True),
-        ).order_by(RoomParticipant.joined_at)
-    )
-    return [ParticipantResponse.model_validate(p) for p in parts_result.scalars().all()]
+        parts_result = await db.execute(
+            select(RoomParticipant).where(
+                RoomParticipant.session_id == session.id,
+                RoomParticipant.is_active.is_(True),
+            ).order_by(RoomParticipant.joined_at)
+        )
+        return [ParticipantResponse.model_validate(p) for p in parts_result.scalars().all()]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error listing participants in room=%s", room_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")

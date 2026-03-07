@@ -45,7 +45,7 @@ class SessionScore(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sessions.sessions.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False)
 
     # ── Skill dimensions (0-100 each) ──────────────────────────────
     fluency: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -79,7 +79,7 @@ class ProgressSnapshot(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False)
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[str] = mapped_column(String(10), nullable=False)  # 7d, 30d, all
 
@@ -97,4 +97,4 @@ class ProgressSnapshot(Base):
     sessions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_xp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    extra_metadata: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)

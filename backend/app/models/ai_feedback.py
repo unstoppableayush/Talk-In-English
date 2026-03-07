@@ -27,7 +27,7 @@ class AIFeedbackReport(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sessions.sessions.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"), nullable=False)
 
     # ── Structured feedback ────────────────────────────────────────
     # Per-dimension textual analysis keyed by dimension name

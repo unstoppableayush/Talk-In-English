@@ -25,7 +25,7 @@ class Message(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sessions.sessions.id", ondelete="CASCADE"), nullable=False
     )
-    sender_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("auth.users.id"))
+    sender_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("public.app_users.id"))
     sender_type: Mapped[str] = mapped_column(String(20), nullable=False)  # user, ai, system, moderator
     content: Mapped[str] = mapped_column(Text, nullable=False)
     message_type: Mapped[str] = mapped_column(String(20), nullable=False, default="text")  # text, audio, mixed
@@ -34,7 +34,7 @@ class Message(Base):
     audio_duration_ms: Mapped[int | None] = mapped_column(Integer)
     stt_confidence: Mapped[float | None] = mapped_column(Float)
     word_count: Mapped[int | None] = mapped_column(Integer)
-    metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    extra_metadata: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
