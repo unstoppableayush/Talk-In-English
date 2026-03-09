@@ -11,6 +11,10 @@ alembic==1.14.*
 # Redis
 redis[hiredis]==5.2.*
 
+# WebSocket client (Deepgram STT streaming)
+websockets>=13.0,<17.0
+deepgram-sdk>=6.0,<7.0
+
 # Auth
 python-jose[cryptography]==3.3.*
 passlib[bcrypt]==1.7.*
@@ -27,6 +31,9 @@ anthropic==0.43.*
 
 # Background tasks
 celery[redis]==5.4.*
+
+# ElevenLabs TTS
+elevenlabs>=2.38,<3.0
 
 # HTTP client (for inter-service calls)
 httpx==0.28.*

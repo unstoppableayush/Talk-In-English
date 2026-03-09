@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import {
   LayoutDashboard,
@@ -9,69 +9,77 @@ import {
   Shield,
   Theater,
 } from 'lucide-react';
+import { Layout, Menu, Typography, Dropdown, Avatar, Space } from 'antd';
 
-const links = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/ai-chat', label: 'AI Chat', icon: MessageSquare },
-  { to: '/peer-chat', label: 'Peer Chat', icon: Users },
-  { to: '/roleplay', label: 'Role Play', icon: Theater },
-  { to: '/admin', label: 'Admin', icon: Shield },
-];
+const { Header, Sider, Content } = Layout;
+const { Text } = Typography;
 
 export default function AppLayout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = () => {
     logout();
     navigate('/auth/login');
   };
 
+  const menuItems = [
+    { key: '/', icon: <LayoutDashboard className="w-4 h-4" />, label: 'Dashboard' },
+    { key: '/ai-chat', icon: <MessageSquare className="w-4 h-4" />, label: 'AI Chat' },
+    { key: '/peer-chat', icon: <Users className="w-4 h-4" />, label: 'Peer Chat' },
+    { key: '/roleplay', icon: <Theater className="w-4 h-4" />, label: 'Role Play' },
+    { key: '/admin', icon: <Shield className="w-4 h-4" />, label: 'Admin' },
+  ];
+
+  const userMenuItems = [
+    {
+      key: '1',
+      label: (
+        <div className="flex flex-col">
+          <Text strong>{user?.display_name}</Text>
+          <Text type="secondary" className="text-xs">{user?.email}</Text>
+        </div>
+      ),
+    },
+    { type: 'divider' as const },
+    {
+      key: '2',
+      icon: <LogOut className="w-4 h-4" />,
+      label: 'Sign out',
+      onClick: handleLogout,
+      danger: true,
+    },
+  ];
+
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside className="flex w-64 flex-col bg-primary-900 text-white">
-        <div className="flex items-center gap-2 px-6 py-5">
-          <Mic className="h-6 w-6 text-primary-300" />
+    <Layout className="min-h-screen">
+      <Sider width={256} theme="dark" breakpoint="lg" collapsedWidth="0">
+        <div className="flex items-center gap-2 px-6 py-5 text-white">
+          <Mic className="h-6 w-6 text-indigo-400" />
           <span className="text-lg font-bold">Speaking App</span>
         </div>
-
-        <nav className="flex-1 space-y-1 px-3">
-          {links.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
-                  isActive
-                    ? 'bg-primary-700 text-white'
-                    : 'text-primary-300 hover:bg-primary-800 hover:text-white'
-                }`
-              }
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="border-t border-primary-800 px-4 py-4">
-          <div className="mb-2 text-sm font-medium">{user?.display_name}</div>
-          <div className="mb-3 text-xs text-primary-400">{user?.email}</div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 text-sm text-primary-400 hover:text-white"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </button>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
-        <Outlet />
-      </main>
-    </div>
+        <Menu
+          theme="dark"
+          mode="inline"
+          selectedKeys={[location.pathname]}
+          items={menuItems}
+          onClick={({ key }) => navigate(key)}
+        />
+      </Sider>
+      <Layout>
+        <Header className="flex justify-end items-center px-6 bg-white shadow-sm">
+          <Dropdown menu={{ items: userMenuItems }} trigger={['click']} placement="bottomRight">
+            <Space className="cursor-pointer">
+              <Avatar className="bg-indigo-500">{user?.display_name?.charAt(0).toUpperCase()}</Avatar>
+              <Text strong className="hidden sm:block">{user?.display_name}</Text>
+            </Space>
+          </Dropdown>
+        </Header>
+        <Content className="m-6 overflow-y-auto">
+          <Outlet />
+        </Content>
+      </Layout>
+    </Layout>
   );
 }
