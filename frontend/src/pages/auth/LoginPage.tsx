@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Form, Input, Button, Divider, Alert } from 'antd';
+import { MailOutlined, LockOutlined } from '@ant-design/icons';
 import api from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { AuthResponse } from '@/types';
@@ -20,8 +22,6 @@ declare global {
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -62,12 +62,14 @@ export default function LoginPage() {
     });
   }, [handleGoogleResponse]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onFinish = async (values: any) => {
     setError('');
     setLoading(true);
     try {
-      const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
+      const { data } = await api.post<AuthResponse>('/auth/login', { 
+        email: values.email, 
+        password: values.password 
+      });
       setAuth(data.user, data.tokens.access_token, data.tokens.refresh_token);
       navigate('/');
     } catch (err: unknown) {
@@ -79,53 +81,51 @@ export default function LoginPage() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-lg font-semibold">Sign In</h2>
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold text-gray-800 text-center mb-6">Welcome Back</h2>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <Alert message={error} type="error" showIcon className="mb-4" />}
 
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        required
-        className="w-full rounded-lg border px-4 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-        className="w-full rounded-lg border px-4 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-      />
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-lg bg-primary-600 py-2 font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+      <Form
+        name="login_form"
+        layout="vertical"
+        onFinish={onFinish}
+        size="large"
       >
-        {loading ? 'Signing in…' : 'Sign In'}
-      </button>
+        <Form.Item
+          name="email"
+          rules={[{ required: true, message: 'Please input your Email!' }, { type: 'email', message: 'The input is not valid E-mail!' }]}
+        >
+          <Input prefix={<MailOutlined className="text-gray-400" />} placeholder="Email" />
+        </Form.Item>
+
+        <Form.Item
+          name="password"
+          rules={[{ required: true, message: 'Please input your Password!' }]}
+        >
+          <Input.Password prefix={<LockOutlined className="text-gray-400" />} placeholder="Password" />
+        </Form.Item>
+
+        <Form.Item>
+          <Button type="primary" htmlType="submit" className="w-full bg-indigo-600" loading={loading}>
+            Sign In
+          </Button>
+        </Form.Item>
+      </Form>
 
       {GOOGLE_CLIENT_ID && (
         <>
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-gray-200" />
-            <span className="text-xs text-gray-400">or</span>
-            <div className="h-px flex-1 bg-gray-200" />
-          </div>
-          <div ref={googleBtnRef} className="flex justify-center" />
+          <Divider plain className="text-gray-400 text-xs">OR</Divider>
+          <div ref={googleBtnRef} className="flex justify-center mb-4" />
         </>
       )}
 
       <p className="text-center text-sm text-gray-500">
         Don&apos;t have an account?{' '}
-        <Link to="/auth/register" className="text-primary-600 hover:underline">
+        <Link to="/auth/register" className="text-indigo-600 hover:text-indigo-800 font-medium">
           Register
         </Link>
       </p>
-    </form>
+    </div>
   );
 }

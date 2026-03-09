@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Form, Input, Button, Divider, Alert } from 'antd';
+import { UserOutlined, MailOutlined, LockOutlined } from '@ant-design/icons';
 import api from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { AuthResponse } from '@/types';
@@ -20,9 +22,6 @@ declare global {
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
 export default function RegisterPage() {
-  const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -63,15 +62,14 @@ export default function RegisterPage() {
     });
   }, [handleGoogleResponse]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onFinish = async (values: any) => {
     setError('');
     setLoading(true);
     try {
       const { data } = await api.post<AuthResponse>('/auth/register', {
-        email,
-        display_name: displayName,
-        password,
+        email: values.email,
+        display_name: values.display_name,
+        password: values.password,
       });
       setAuth(data.user, data.tokens.access_token, data.tokens.refresh_token);
       navigate('/');
@@ -84,62 +82,61 @@ export default function RegisterPage() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-lg font-semibold">Create Account</h2>
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold text-gray-800 text-center mb-6">Create Account</h2>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <Alert message={error} type="error" showIcon className="mb-4" />}
 
-      <input
-        type="text"
-        placeholder="Display Name"
-        value={displayName}
-        onChange={(e) => setDisplayName(e.target.value)}
-        required
-        className="w-full rounded-lg border px-4 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-      />
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        required
-        className="w-full rounded-lg border px-4 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-      />
-      <input
-        type="password"
-        placeholder="Password (8+ chars)"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-        minLength={8}
-        className="w-full rounded-lg border px-4 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-      />
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-lg bg-primary-600 py-2 font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+      <Form
+        name="register_form"
+        layout="vertical"
+        onFinish={onFinish}
+        size="large"
       >
-        {loading ? 'Creating account…' : 'Register'}
-      </button>
+        <Form.Item
+          name="display_name"
+          rules={[{ required: true, message: 'Please input your Display Name!' }]}
+        >
+          <Input prefix={<UserOutlined className="text-gray-400" />} placeholder="Display Name" />
+        </Form.Item>
+
+        <Form.Item
+          name="email"
+          rules={[{ required: true, message: 'Please input your Email!' }, { type: 'email', message: 'The input is not valid E-mail!' }]}
+        >
+          <Input prefix={<MailOutlined className="text-gray-400" />} placeholder="Email" />
+        </Form.Item>
+
+        <Form.Item
+          name="password"
+          rules={[
+            { required: true, message: 'Please input your Password!' },
+            { min: 8, message: 'Password must be at least 8 characters' }
+          ]}
+        >
+          <Input.Password prefix={<LockOutlined className="text-gray-400" />} placeholder="Password (8+ chars)" />
+        </Form.Item>
+
+        <Form.Item>
+          <Button type="primary" htmlType="submit" className="w-full bg-indigo-600" loading={loading}>
+            Register
+          </Button>
+        </Form.Item>
+      </Form>
 
       {GOOGLE_CLIENT_ID && (
         <>
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-gray-200" />
-            <span className="text-xs text-gray-400">or</span>
-            <div className="h-px flex-1 bg-gray-200" />
-          </div>
-          <div ref={googleBtnRef} className="flex justify-center" />
+          <Divider plain className="text-gray-400 text-xs">OR</Divider>
+          <div ref={googleBtnRef} className="flex justify-center mb-4" />
         </>
       )}
 
       <p className="text-center text-sm text-gray-500">
         Already have an account?{' '}
-        <Link to="/auth/login" className="text-primary-600 hover:underline">
+        <Link to="/auth/login" className="text-indigo-600 hover:text-indigo-800 font-medium">
           Sign In
         </Link>
       </p>
-    </form>
+    </div>
   );
 }

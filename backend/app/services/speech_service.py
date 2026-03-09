@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import asyncio
 import io
-import json
 import logging
 from dataclasses import dataclass
 
 import httpx
+from deepgram import AsyncDeepgramClient
+from deepgram.core.events import EventType
+from deepgram.listen.v1.types.listen_v1results import ListenV1Results
+from elevenlabs.client import AsyncElevenLabs
+from elevenlabs.types import VoiceSettings
 from openai import AsyncOpenAI
 
 from app.core.config import settings
@@ -51,7 +55,7 @@ class PronunciationScore:
 
 class DeepgramSTT:
     """
-    Streams raw audio bytes to Deepgram's real-time WebSocket API
+    Streams raw audio bytes to Deepgram using the official SDK (v6)
     and yields TranscriptionResult objects as partial/final results arrive.
     """
 
@@ -64,67 +68,101 @@ class DeepgramSTT:
         *,
         language: str = "en",
         model: str = "nova-2",
-        sample_rate: int = 16000,
-        encoding: str = "linear16",
     ):
         """
-        Consume audio chunks from a queue, send to Deepgram, and yield results.
+        Consume audio chunks from a queue, send to Deepgram via SDK, yield results.
 
-        Put `None` into the queue to signal end-of-stream.
+        Put ``None`` into the queue to signal end-of-stream.
         """
-        import websockets
+        client = AsyncDeepgramClient(api_key=self._api_key)
+        result_queue: asyncio.Queue[TranscriptionResult | None] = asyncio.Queue()
 
-        url = (
-            f"wss://api.deepgram.com/v1/listen"
-            f"?language={language}&model={model}"
-            f"&encoding={encoding}&sample_rate={sample_rate}"
-            f"&punctuate=true&interim_results=true&utterance_end_ms=1000"
-        )
-        headers = {"Authorization": f"Token {self._api_key}"}
+        async with client.listen.v1.connect(
+            model=model,
+            language=language,
+            punctuate="true",
+            smart_format="true",
+            interim_results="true",
+            utterance_end_ms="1000",
+            vad_events="true",
+        ) as connection:
 
-        async with websockets.connect(url, additional_headers=headers) as ws:
-            # Sender task — forward audio chunks to Deepgram
+            # --- Event callbacks (push to result_queue) ---
+            def _on_message(msg):
+                if not isinstance(msg, ListenV1Results):
+                    return
+                alt = (msg.channel.alternatives or [None])[0]
+                if alt is None:
+                    return
+                words = [
+                    {
+                        "word": w.word,
+                        "start": w.start,
+                        "end": w.end,
+                        "confidence": w.confidence,
+                        "punctuated_word": w.punctuated_word or w.word,
+                    }
+                    for w in (alt.words or [])
+                ]
+                result_queue.put_nowait(TranscriptionResult(
+                    text=alt.transcript,
+                    confidence=alt.confidence,
+                    words=words,
+                    duration_ms=int(msg.duration * 1000),
+                    is_final=bool(msg.is_final),
+                ))
+
+            def _on_error(error):
+                logger.error("Deepgram SDK error: %s", error)
+
+            connection.on(EventType.MESSAGE, _on_message)
+            connection.on(EventType.ERROR, _on_error)
+
+            # --- Sender: forward audio chunks to Deepgram ---
             async def _sender():
-                while True:
-                    chunk = await audio_chunks.get()
-                    if chunk is None:
-                        await ws.send(json.dumps({"type": "CloseStream"}))
-                        break
-                    await ws.send(chunk)
+                try:
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(audio_chunks.get(), timeout=8.0)
+                        except asyncio.TimeoutError:
+                            await connection.send_keep_alive()
+                            continue
+                        if chunk is None:
+                            await connection.send_finalize()
+                            # Give a moment for final results, then signal done
+                            await asyncio.sleep(1.0)
+                            result_queue.put_nowait(None)
+                            return
+                        await connection.send_media(chunk)
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.error("Deepgram sender failed", exc_info=True)
+                finally:
+                    result_queue.put_nowait(None)
 
             sender_task = asyncio.create_task(_sender())
 
-            # Receiver — yield transcription results
+            # Start the SDK's internal receive loop in the background
+            listen_task = asyncio.create_task(connection.start_listening())
+
+            # --- Yield results as they arrive ---
             try:
-                async for raw in ws:
-                    msg = json.loads(raw)
-                    if msg.get("type") == "Results":
-                        channel = msg.get("channel", {})
-                        alt = (channel.get("alternatives") or [{}])[0]
-                        words = alt.get("words", [])
-                        yield TranscriptionResult(
-                            text=alt.get("transcript", ""),
-                            confidence=alt.get("confidence", 0.0),
-                            words=[
-                                {
-                                    "word": w.get("word", ""),
-                                    "start": w.get("start", 0),
-                                    "end": w.get("end", 0),
-                                    "confidence": w.get("confidence", 0),
-                                    "punctuated_word": w.get("punctuated_word", ""),
-                                }
-                                for w in words
-                            ],
-                            duration_ms=int(msg.get("duration", 0) * 1000),
-                            is_final=msg.get("is_final", False),
-                        )
+                while True:
+                    item = await result_queue.get()
+                    if item is None:
+                        break
+                    yield item
             finally:
                 sender_task.cancel()
+                listen_task.cancel()
+                try:
+                    await connection.send_close_stream()
+                except Exception:
+                    pass
 
     async def transcribe_audio(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
         """One-shot transcription for a complete audio file/buffer."""
-        import httpx
-
         url = (
             f"https://api.deepgram.com/v1/listen"
             f"?language={language}&model=nova-2&punctuate=true"
@@ -174,10 +212,10 @@ class TTSProvider:
 
 
 class ElevenLabsTTS(TTSProvider):
-    """Generate speech audio using ElevenLabs TTS API."""
+    """Generate speech audio using the official ElevenLabs SDK."""
 
     def __init__(self) -> None:
-        self._api_key = settings.ELEVENLABS_API_KEY
+        self._client = AsyncElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
         self._voice_id = settings.ELEVENLABS_VOICE_ID
         self.name = "elevenlabs"
 
@@ -189,23 +227,20 @@ class ElevenLabsTTS(TTSProvider):
         output_format: str = "mp3_44100_128",
         **kwargs: object,
     ) -> bytes:
-        vid = voice_id or self._voice_id
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
-        headers = {
-            "xi-api-key": self._api_key,
-            "Content-Type": "application/json",
-            "Accept": f"audio/{output_format.split('_')[0]}",
-        }
-        payload = {
-            "text": text,
-            "model_id": model_id,
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
-        }
-
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            resp.raise_for_status()
-            return resp.content
+        audio_iter = self._client.text_to_speech.convert(
+            voice_id=voice_id or self._voice_id,
+            text=text,
+            model_id=model_id,
+            output_format=output_format,
+            voice_settings=VoiceSettings(
+                stability=0.5,
+                similarity_boost=0.75,
+            ),
+        )
+        buf = io.BytesIO()
+        async for chunk in audio_iter:
+            buf.write(chunk)
+        return buf.getvalue()
 
 
 class OpenAITTS(TTSProvider):

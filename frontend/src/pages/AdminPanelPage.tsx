@@ -1,8 +1,16 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Table, Tabs, Button, Tag, Typography, Space, Popconfirm } from 'antd';
+import { 
+  TeamOutlined, 
+  SafetyCertificateOutlined, 
+  ReloadOutlined, 
+  DeleteOutlined 
+} from '@ant-design/icons';
 import api from '@/lib/api';
 import type { Room } from '@/types';
-import { Trash2, Users, Shield, RefreshCw } from 'lucide-react';
+
+const { Title } = Typography;
 
 interface AdminUser {
   id: string;
@@ -16,10 +24,10 @@ interface AdminUser {
 
 export default function AdminPanelPage() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'rooms' | 'users'>('rooms');
+  const [activeTab, setActiveTab] = useState('rooms');
 
   // Rooms
-  const { data: rooms = [] } = useQuery<Room[]>({
+  const { data: rooms = [], isLoading: roomsLoading } = useQuery<Room[]>({
     queryKey: ['admin-rooms'],
     queryFn: () => api.get('/rooms').then((r) => r.data),
   });
@@ -29,161 +37,176 @@ export default function AdminPanelPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-rooms'] }),
   });
 
-  // Users — uses a hypothetical admin endpoint; adjust URL as needed
-  const { data: users = [] } = useQuery<AdminUser[]>({
+  // Users
+  const { data: users = [], isLoading: usersLoading } = useQuery<AdminUser[]>({
     queryKey: ['admin-users'],
     queryFn: () => api.get('/auth/users').then((r) => r.data),
-    enabled: tab === 'users',
+    enabled: activeTab === 'users',
   });
 
-  const tabClass = (t: string) =>
-    `px-4 py-2 text-sm font-medium rounded-lg ${
-      tab === t ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-    }`;
+  const handleRefresh = () => {
+    qc.invalidateQueries({ queryKey: [`admin-${activeTab}`] });
+  };
+
+  const roomColumns = [
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text: string) => <span className="font-medium">{text}</span>,
+    },
+    {
+      title: 'Type',
+      dataIndex: 'room_type',
+      key: 'room_type',
+      render: (type: string) => (
+        <Tag color="geekblue" className="rounded-full">{type}</Tag>
+      ),
+    },
+    {
+      title: 'Language',
+      dataIndex: 'language',
+      key: 'language',
+    },
+    {
+      title: 'Speakers',
+      key: 'speakers',
+      render: (_: any, record: Room) => (
+        `${record.speaker_count}/${record.max_speakers}`
+      ),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'is_active',
+      key: 'status',
+      render: (isActive: boolean) => (
+        <Tag color={isActive ? 'success' : 'default'} className="rounded-full">
+          {isActive ? 'Active' : 'Closed'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_: any, record: Room) => (
+        <Popconfirm
+          title="Delete room"
+          description="Are you sure you want to delete this room?"
+          onConfirm={() => deleteRoom.mutate(record.id)}
+          okText="Yes"
+          cancelText="No"
+          okButtonProps={{ danger: true }}
+        >
+          <Button 
+            type="text" 
+            danger 
+            icon={<DeleteOutlined />} 
+            loading={deleteRoom.isPending}
+          />
+        </Popconfirm>
+      ),
+    },
+  ];
+
+  const userColumns = [
+    {
+      title: 'Name',
+      dataIndex: 'display_name',
+      key: 'name',
+      render: (text: string) => <span className="font-medium">{text}</span>,
+    },
+    {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
+    },
+    {
+      title: 'Role',
+      dataIndex: 'role',
+      key: 'role',
+      render: (role: string) => {
+        let color = 'default';
+        if (role === 'admin') color = 'volcano';
+        if (role === 'moderator') color = 'gold';
+        return <Tag color={color} className="uppercase text-[10px] tracking-wider">{role}</Tag>;
+      },
+    },
+    {
+      title: 'XP',
+      dataIndex: 'xp',
+      key: 'xp',
+      render: (xp: number) => xp.toLocaleString(),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'is_active',
+      key: 'status',
+      render: (isActive: boolean) => (
+        <Space>
+          <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+          {isActive ? 'Active' : 'Inactive'}
+        </Space>
+      ),
+    },
+    {
+      title: 'Joined',
+      dataIndex: 'created_at',
+      key: 'joined',
+      render: (dateStr: string) => new Date(dateStr).toLocaleDateString(),
+    },
+  ];
+
+  const items = [
+    {
+      key: 'rooms',
+      label: <span className="flex items-center gap-2"><TeamOutlined /> Rooms</span>,
+      children: (
+        <Table 
+          columns={roomColumns} 
+          dataSource={rooms} 
+          rowKey="id" 
+          loading={roomsLoading}
+          pagination={{ pageSize: 10 }}
+          className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100"
+        />
+      ),
+    },
+    {
+      key: 'users',
+      label: <span className="flex items-center gap-2"><SafetyCertificateOutlined /> Users</span>,
+      children: (
+        <Table 
+          columns={userColumns} 
+          dataSource={users} 
+          rowKey="id" 
+          loading={usersLoading}
+          pagination={{ pageSize: 10 }}
+          className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100"
+        />
+      ),
+    },
+  ];
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Admin Panel</h1>
-        <button
-          onClick={() => qc.invalidateQueries({ queryKey: [`admin-${tab}`] })}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+        <Title level={3} className="!mb-0">Admin Panel</Title>
+        <Button 
+          type="default" 
+          icon={<ReloadOutlined />} 
+          onClick={handleRefresh}
         >
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
+          Refresh
+        </Button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2">
-        <button className={tabClass('rooms')} onClick={() => setTab('rooms')}>
-          <span className="flex items-center gap-1">
-            <Users className="h-4 w-4" /> Rooms ({rooms.length})
-          </span>
-        </button>
-        <button className={tabClass('users')} onClick={() => setTab('users')}>
-          <span className="flex items-center gap-1">
-            <Shield className="h-4 w-4" /> Users
-          </span>
-        </button>
-      </div>
-
-      {/* Rooms table */}
-      {tab === 'rooms' && (
-        <div className="overflow-hidden rounded-xl bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Language</th>
-                <th className="px-4 py-3 font-medium">Speakers</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {rooms.map((room) => (
-                <tr key={room.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{room.name}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-600">
-                      {room.room_type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">{room.language}</td>
-                  <td className="px-4 py-3">
-                    {room.speaker_count}/{room.max_speakers}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        room.is_active
-                          ? 'bg-green-50 text-green-600'
-                          : 'bg-gray-100 text-gray-500'
-                      }`}
-                    >
-                      {room.is_active ? 'Active' : 'Closed'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => deleteRoom.mutate(room.id)}
-                      disabled={deleteRoom.isPending}
-                      className="rounded p-1 text-red-500 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {rooms.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                    No rooms found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Users table */}
-      {tab === 'users' && (
-        <div className="overflow-hidden rounded-xl bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">XP</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Joined</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {users.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{u.display_name}</td>
-                  <td className="px-4 py-3">{u.email}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        u.role === 'admin'
-                          ? 'bg-red-50 text-red-600'
-                          : u.role === 'moderator'
-                            ? 'bg-yellow-50 text-yellow-600'
-                            : 'bg-gray-100 text-gray-500'
-                      }`}
-                    >
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">{u.xp.toLocaleString()}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`h-2 w-2 inline-block rounded-full ${
-                        u.is_active ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {new Date(u.created_at).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-              {users.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                    No users found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Tabs 
+        activeKey={activeTab} 
+        onChange={setActiveTab} 
+        items={items} 
+        type="card"
+        className="admin-tabs"
+      />
     </div>
   );
 }
