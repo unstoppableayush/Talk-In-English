@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Typography, Avatar, Layout, Tooltip, Input, Segmented } from 'antd';
+import { Button, Typography, Avatar, Layout, Tooltip, Input, Segmented, message } from 'antd';
 import { RobotOutlined, UserOutlined, AudioOutlined, AudioMutedOutlined, SendOutlined } from '@ant-design/icons';
 import api from '@/lib/api';
 import { useRoomStore } from '@/stores/roomStore';
@@ -58,8 +58,8 @@ export default function AIConversationPage() {
       });
       const { data: session } = await api.post(`/rooms/${room.id}/join`, { role: 'speaker' });
       setSessionId(session.session_id);
-    } catch {
-      // ignore
+    } catch (err) {
+      message.error('Failed to start session. Please try again.');
     } finally {
       setStarting(false);
     }

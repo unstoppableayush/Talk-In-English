@@ -133,10 +133,18 @@ async def websocket_session(
 
             # ── Text message (speakers only) ──────────────────
             if event == "message.send" and role == "speaker":
-                await _handle_message(
-                    session_id, user_id, display_name, event_data,
-                    mode=session_mode, topic=session_topic,
-                )
+                content = event_data.get("content", "")
+                if len(content) > 4000:
+                    logger.warning("Message from user %s exceeds max length (%d chars) — rejected", user_id, len(content))
+                    await ws.send_json({
+                        "event": "message.error",
+                        "data": {"code": "MESSAGE_TOO_LONG", "message": "Message exceeds 4000 character limit"},
+                    })
+                else:
+                    await _handle_message(
+                        session_id, user_id, display_name, event_data,
+                        mode=session_mode, topic=session_topic,
+                    )
 
             # ── Audio activity flags ──────────────────────────
             elif event == "audio.speaking.start":
