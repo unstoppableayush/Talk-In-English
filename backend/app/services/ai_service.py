@@ -681,7 +681,11 @@ class ScoringEngine:
                 if uid_str not in user_ids:
                     continue
 
-                uid = uuid.UUID(uid_str)
+                try:
+                    uid = uuid.UUID(uid_str)
+                except ValueError:
+                    logger.warning("Invalid UUID returned by LLM for session %s: %r — skipping", session_id, uid_str)
+                    continue
 
                 # -- SessionScore --
                 def _clamp(v: int | float, lo: int = 0, hi: int = 100) -> int:

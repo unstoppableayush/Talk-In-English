@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,7 @@ from app.schemas.models import (
     SessionResponse,
     TranscriptResponse,
 )
+from app.services.ai_service import scoring_engine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -185,6 +186,7 @@ async def leave_session(
 @router.post("/{session_id}/end", response_model=SessionResponse)
 async def end_session(
     session_id: str,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -207,7 +209,7 @@ async def end_session(
         await db.refresh(session)
         logger.info("Session %s ended", session_id)
 
-        # TODO: Trigger evaluation pipeline via Celery task
+        background_tasks.add_task(scoring_engine.evaluate_session, str(session.id))
         return SessionResponse.model_validate(session)
     except HTTPException:
         raise
@@ -227,6 +229,16 @@ async def get_transcript(
         session = result.scalar_one_or_none()
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+        # Ensure the requesting user was a participant in this session
+        participant_result = await db.execute(
+            select(RoomParticipant).where(
+                RoomParticipant.session_id == session.id,
+                RoomParticipant.user_id == user.id,
+            )
+        )
+        if not participant_result.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
         messages_result = await db.execute(
             select(Message).where(Message.session_id == session_id).order_by(Message.created_at)

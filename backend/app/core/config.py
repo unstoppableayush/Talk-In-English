@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     MAX_SPEAKERS_PER_ROOM: int = 5
     MAX_SESSION_DURATION_SEC: int = 3600  # 1 hour
 
+    # Database connection pool
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE: int = 3600  # seconds
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
