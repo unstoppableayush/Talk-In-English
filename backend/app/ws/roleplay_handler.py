@@ -12,6 +12,7 @@ Protocol:
 
 import json
 import logging
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -22,9 +23,89 @@ from app.core.security import decode_token
 from app.models.roleplay import RoleplayMessage, RoleplayScenario, RoleplaySession
 from app.models.user import User
 from app.services.roleplay_service import roleplay_engine
+from app.services.speech_service import stt_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.websocket("/roleplay-audio/{session_id}")
+async def ws_roleplay_audio(
+    ws: WebSocket,
+    session_id: str,
+    token: str = Query(...),
+    language: str = Query(default="en"),
+):
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        await ws.close(code=4001, reason="Invalid token")
+        return
+
+    user_id = payload["sub"]
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(RoleplaySession).where(
+                RoleplaySession.id == session_id,
+                RoleplaySession.user_id == user_id,
+                RoleplaySession.status == "active",
+            )
+        )
+        session = result.scalar_one_or_none()
+        if not session:
+            await ws.close(code=4004, reason="Session not found or not active")
+            return
+
+    await ws.accept()
+
+    audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    stt_task: asyncio.Task | None = None
+
+    async def _stt_consumer():
+        try:
+            async for result in stt_service.transcribe_stream(audio_queue, language=language):
+                await ws.send_json({
+                    "event": "transcription.result",
+                    "data": {
+                        "text": result.text,
+                        "confidence": result.confidence,
+                        "is_final": result.is_final,
+                        "duration_ms": result.duration_ms,
+                        "words": result.words,
+                    },
+                })
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Roleplay STT consumer failed for session=%s", session_id)
+
+    def _ensure_stt_running() -> None:
+        nonlocal stt_task
+        if stt_task is None or stt_task.done():
+            stt_task = asyncio.create_task(_stt_consumer())
+
+    try:
+        while True:
+            data = await ws.receive()
+
+            if "bytes" in data and data["bytes"]:
+                _ensure_stt_running()
+                await audio_queue.put(data["bytes"])
+            elif "text" in data and data["text"]:
+                try:
+                    msg = json.loads(data["text"])
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("event") == "audio.stt.flush":
+                    await audio_queue.put(None)
+                elif msg.get("event") == "system.ping":
+                    await ws.send_json({"event": "system.pong", "data": {}})
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        await audio_queue.put(None)
+        if stt_task and not stt_task.done():
+            stt_task.cancel()
 
 
 @router.websocket("/roleplay/{session_id}")

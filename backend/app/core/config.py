@@ -30,16 +30,20 @@ class Settings(BaseSettings):
     # e.g. "openai,grok,gemini,deepseek"
     LLM_PROVIDER_ORDER: str = "openai,groq,grok,gemini,deepseek"
 
-    # TTS provider priority: "elevenlabs,openai"
-    TTS_PROVIDER_ORDER: str = "elevenlabs,openai"
+    # TTS provider priority: "elevenlabs,deepgram,openai"
+    TTS_PROVIDER_ORDER: str = "elevenlabs,deepgram,openai"
     ELEVENLABS_API_KEY: str = ""
     ELEVENLABS_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"  # "Rachel" default
 
     # Media
     DEEPGRAM_API_KEY: str = ""
+    DEEPGRAM_TTS_MODEL: str = "aura-asteria-en"
+    # STT provider priority: "deepgram,groq,elevenlabs"
+    STT_PROVIDER_ORDER: str = "deepgram,groq,elevenlabs"
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_TOKEN_CLOCK_SKEW_SECONDS: int = 10
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]

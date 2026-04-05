@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { buildWSUrl } from '@/lib/ws';
+import { useAudioSocket, type SttMode } from '@/hooks/useAudioSocket';
 import type {
   RoleplayScenario,
   RoleplaySession,
@@ -21,7 +22,10 @@ import {
   TrendingDown,
   Lightbulb,
   ArrowRight,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
+import { AudioOutlined, AudioMutedOutlined } from '@ant-design/icons';
 
 type Phase = 'setup' | 'conversation' | 'report';
 type Difficulty = 'beginner' | 'intermediate' | 'advanced';
@@ -40,6 +44,8 @@ export default function RolePlayPage() {
   const [session, setSession] = useState<RoleplaySession | null>(null);
   const [messages, setMessages] = useState<RoleplayMessage[]>([]);
   const [input, setInput] = useState('');
+  const [sttMode, setSttMode] = useState<SttMode>('browser');
+  const [ttsEnabled, setTtsEnabled] = useState(true);
   const [aiTyping, setAiTyping] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
@@ -49,6 +55,26 @@ export default function RolePlayPage() {
   // ── Report state ──
   const [evaluation, setEvaluation] = useState<RoleplayEvaluation | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
+
+  const getScore = (value?: number, fallback?: number) => value ?? fallback ?? 0;
+
+  const { startRecording, stopRecording, isRecording, isConnecting, requestTTS } = useAudioSocket(
+    session?.id ?? null,
+    {
+      mode: sttMode,
+      lang: 'en-US',
+      audioRoute: 'roleplay-audio',
+      useBackendTTS: false,
+      onResult: (text) => {
+        const next = text.trim();
+        if (!next) return;
+        setInput((prev) => {
+          const base = prev.trim();
+          return base ? `${base} ${next}` : next;
+        });
+      },
+    },
+  );
 
   // ── Fetch scenarios ──
   const { data: scenarios = [] } = useQuery<RoleplayScenario[]>({
@@ -88,15 +114,27 @@ export default function RolePlayPage() {
       if (selectedScenario) body.scenario_id = selectedScenario.id;
       else body.custom_topic = customTopic.trim();
 
-      const { data } = await api.post<{
+      const { data } = await api.post<RoleplaySession | {
         session: RoleplaySession;
-        opening_message: RoleplayMessage;
+        opening_message?: RoleplayMessage;
       }>('/roleplay/start-session', body);
 
-      setSession(data.session);
-      setMessages([data.opening_message]);
+      const startedSession = 'session' in data ? data.session : data;
+      setSession(startedSession);
+
+      if ('opening_message' in data && data.opening_message) {
+        setMessages([data.opening_message]);
+      } else {
+        try {
+          const transcript = await api.get<RoleplayMessage[]>(`/roleplay/sessions/${startedSession.id}/messages`);
+          setMessages(transcript.data);
+        } catch {
+          setMessages([]);
+        }
+      }
+
       setPhase('conversation');
-      connectWS(data.session.id);
+      connectWS(startedSession.id);
     } catch {
       // ignore
     } finally {
@@ -114,6 +152,9 @@ export default function RolePlayPage() {
       const msg = JSON.parse(evt.data);
       if (msg.event === 'roleplay.ai_reply') {
         setAiTyping(false);
+        if (ttsEnabled && msg.data?.content) {
+          requestTTS(String(msg.data.content));
+        }
         setMessages((prev) => [
           ...prev,
           {
@@ -129,7 +170,7 @@ export default function RolePlayPage() {
         fetchReport(sessionId);
       }
     };
-  }, []);
+  }, [requestTTS, ttsEnabled]);
 
   const sendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -359,6 +400,40 @@ export default function RolePlayPage() {
           </div>
         </div>
 
+        <div className="mb-3 flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-sm">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Speech input</p>
+            <p className="text-xs text-gray-500">Choose Browser STT or Deepgram STT. Hold-to-speak is next to Send.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSttMode('browser')}
+              className={`rounded-lg px-3 py-2 text-xs font-medium transition ${sttMode === 'browser' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              Browser STT
+            </button>
+            <button
+              type="button"
+              onClick={() => setSttMode('deepgram')}
+              className={`rounded-lg px-3 py-2 text-xs font-medium transition ${sttMode === 'deepgram' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              Deepgram STT
+            </button>
+            <button
+              type="button"
+              onClick={() => setTtsEnabled((v) => !v)}
+              className={`rounded-lg px-3 py-2 text-xs font-medium transition ${ttsEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              {ttsEnabled ? (
+                <span className="inline-flex items-center gap-1"><Volume2 className="h-3.5 w-3.5" /> TTS On</span>
+              ) : (
+                <span className="inline-flex items-center gap-1"><VolumeX className="h-3.5 w-3.5" /> TTS Off</span>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Messages */}
         <div className="flex-1 space-y-3 overflow-y-auto rounded-xl bg-white p-4 shadow-sm">
           {messages.map((msg) => (
@@ -406,6 +481,19 @@ export default function RolePlayPage() {
             className="flex-1 rounded-lg border border-gray-300 px-4 py-3 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             maxLength={5000}
           />
+          <button
+            type="button"
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onMouseLeave={stopRecording}
+            onTouchStart={startRecording}
+            onTouchEnd={stopRecording}
+            disabled={isConnecting}
+            className={`flex h-11 w-11 items-center justify-center rounded-full text-white transition ${isRecording ? 'bg-red-500 hover:bg-red-600 scale-105 ring-4 ring-red-100' : 'bg-indigo-600 hover:bg-indigo-700'} disabled:opacity-50`}
+            title={isConnecting ? 'Connecting…' : isRecording ? 'Release to send to textbox' : 'Hold to speak'}
+          >
+            {isRecording ? <AudioOutlined /> : <AudioMutedOutlined />}
+          </button>
           <button
             type="submit"
             disabled={!input.trim()}
@@ -455,13 +543,13 @@ export default function RolePlayPage() {
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {(
               [
-                ['Fluency', evaluation.fluency],
-                ['Grammar', evaluation.grammar],
-                ['Vocabulary', evaluation.vocabulary],
-                ['Confidence', evaluation.confidence],
-                ['Clarity', evaluation.clarity],
-                ['Relevance', evaluation.relevance],
-                ['Consistency', evaluation.consistency],
+                ['Fluency', getScore(evaluation.fluency, evaluation.fluency_score)],
+                ['Grammar', getScore(evaluation.grammar, evaluation.grammar_score)],
+                ['Vocabulary', getScore(evaluation.vocabulary, evaluation.vocabulary_score)],
+                ['Confidence', getScore(evaluation.confidence, evaluation.confidence_score)],
+                ['Clarity', getScore(evaluation.clarity, evaluation.clarity_score)],
+                ['Relevance', getScore(evaluation.relevance, evaluation.relevance_score)],
+                ['Consistency', getScore(evaluation.consistency, evaluation.consistency_score)],
               ] as [string, number][]
             ).map(([label, score]) => (
               <div key={label} className="rounded-xl bg-white p-4 text-center shadow-sm">

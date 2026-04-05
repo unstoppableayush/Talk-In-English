@@ -110,10 +110,11 @@ async def google_auth(body: GoogleAuthRequest, db: AsyncSession = Depends(get_db
             body.credential,
             google_requests.Request(),
             settings.GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=settings.GOOGLE_TOKEN_CLOCK_SKEW_SECONDS,
         )
         logger.info("Google token verified successfully")
-    except ValueError:
-        logger.warning("Google token verification failed")
+    except ValueError as exc:
+        logger.warning("Google token verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Google token",

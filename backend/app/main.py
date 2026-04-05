@@ -85,6 +85,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router, prefix="/api/v1/sessions", tags=["sessions"])
     app.include_router(rooms.router, prefix="/api/v1/rooms", tags=["rooms"])
     app.include_router(evaluations.router, prefix="/api/v1/eval", tags=["evaluations"])
+    app.include_router(evaluations.router, prefix="/api/v1/evaluations", tags=["evaluations"])
     app.include_router(progress.router, prefix="/api/v1/progress", tags=["progress"])
     app.include_router(section_tests.router, prefix="/api/v1/tests", tags=["section-tests"])
     app.include_router(leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"])

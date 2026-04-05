@@ -662,13 +662,25 @@ class ScoringEngine:
                 response = await llm_provider.complete(
                     [{"role": "user", "content": prompt}], config
                 )
-                # Strip markdown code fences if present
+                # Parse JSON defensively: providers may wrap output in fences or append commentary.
                 raw = response.content.strip()
-                if raw.startswith("```"):
-                    raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-                    if raw.endswith("```"):
-                        raw = raw[:-3]
-                result = json.loads(raw)
+
+                if "```" in raw:
+                    blocks = [b.strip() for b in raw.split("```") if b.strip()]
+                    json_block = next((b for b in blocks if "{" in b and "}" in b), None)
+                    if json_block:
+                        raw = json_block
+                        if raw.lower().startswith("json"):
+                            raw = raw[4:].lstrip("\n\r ")
+
+                start = raw.find("{")
+                if start == -1:
+                    raise ValueError("No JSON object found in evaluator response")
+
+                decoder = json.JSONDecoder()
+                result, _ = decoder.raw_decode(raw[start:])
+                if not isinstance(result, dict):
+                    raise ValueError("Evaluator response JSON is not an object")
             except Exception:
                 logger.exception("AI scoring failed for session %s", session_id)
                 return []

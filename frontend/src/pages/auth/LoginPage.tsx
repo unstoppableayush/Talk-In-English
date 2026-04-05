@@ -62,7 +62,12 @@ export default function LoginPage() {
     });
   }, [handleGoogleResponse]);
 
-  const onFinish = async (values: any) => {
+  interface LoginFormValues {
+    email: string;
+    password: string;
+  }
+
+  const onFinish = async (values: LoginFormValues) => {
     setError('');
     setLoading(true);
     try {
