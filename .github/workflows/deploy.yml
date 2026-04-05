@@ -28,8 +28,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
   
-      - name: Zip project
-        run: zip -r release.zip .
+      - name: Zip backend only
+        run: |
+          cd backend
+          zip -r ../release.zip .
   
       - name: Deploy to Azure
         uses: azure/webapps-deploy@v2
