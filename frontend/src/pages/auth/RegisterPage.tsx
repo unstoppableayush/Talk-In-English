@@ -62,7 +62,13 @@ export default function RegisterPage() {
     });
   }, [handleGoogleResponse]);
 
-  const onFinish = async (values: any) => {
+  interface RegisterFormValues {
+    email: string;
+    display_name: string;
+    password: string;
+  }
+
+  const onFinish = async (values: RegisterFormValues) => {
     setError('');
     setLoading(true);
     try {

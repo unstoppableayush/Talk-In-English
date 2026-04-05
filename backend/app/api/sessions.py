@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,7 @@ from app.core.deps import get_current_user
 from app.models.message import Message
 from app.models.session import Session, RoomParticipant
 from app.models.user import User
+from app.services.ai_service import scoring_engine
 from app.schemas.models import (
     CreateSessionRequest,
     JoinSessionRequest,
@@ -185,6 +186,7 @@ async def leave_session(
 @router.post("/{session_id}/end", response_model=SessionResponse)
 async def end_session(
     session_id: str,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -197,17 +199,22 @@ async def end_session(
         if session.created_by != user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only session creator can end it")
 
-        now = datetime.now(timezone.utc)
-        session.status = "completed"
-        session.ended_at = now
-        if session.started_at:
-            session.duration_sec = int((now - session.started_at).total_seconds())
+        already_completed = session.status == "completed"
+        if not already_completed:
+            now = datetime.now(timezone.utc)
+            session.status = "completed"
+            session.ended_at = now
+            if session.started_at:
+                session.duration_sec = int((now - session.started_at).total_seconds())
 
         await db.commit()
         await db.refresh(session)
         logger.info("Session %s ended", session_id)
 
-        # TODO: Trigger evaluation pipeline via Celery task
+        # Trigger detailed evaluation once when the session is first completed.
+        if not already_completed:
+            background_tasks.add_task(scoring_engine.evaluate_session, session.id)
+
         return SessionResponse.model_validate(session)
     except HTTPException:
         raise

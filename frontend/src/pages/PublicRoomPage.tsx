@@ -33,13 +33,13 @@ export default function PublicRoomPage() {
 
   const { data: room } = useQuery<Room>({
     queryKey: ['room', roomId],
-    queryFn: () => api.get(`/rooms/${roomId}`).then((r: any) => r.data),
+    queryFn: () => api.get(`/rooms/${roomId}`).then((r) => r.data),
     enabled: !!roomId,
   });
 
   const { data: participants } = useQuery<Participant[]>({
     queryKey: ['participants', roomId],
-    queryFn: () => api.get(`/rooms/${roomId}/participants`).then((r: any) => r.data),
+    queryFn: () => api.get(`/rooms/${roomId}/participants`).then((r) => r.data),
     enabled: !!roomId,
     refetchInterval: 5000,
   });

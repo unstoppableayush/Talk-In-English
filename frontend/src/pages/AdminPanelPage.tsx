@@ -71,7 +71,7 @@ export default function AdminPanelPage() {
     {
       title: 'Speakers',
       key: 'speakers',
-      render: (_: any, record: Room) => (
+      render: (_: unknown, record: Room) => (
         `${record.speaker_count}/${record.max_speakers}`
       ),
     },
@@ -88,7 +88,7 @@ export default function AdminPanelPage() {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: Room) => (
+      render: (_: unknown, record: Room) => (
         <Popconfirm
           title="Delete room"
           description="Are you sure you want to delete this room?"

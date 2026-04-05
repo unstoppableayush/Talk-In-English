@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Typography, Avatar, Layout, Tooltip, Input, Segmented } from 'antd';
 import { RobotOutlined, UserOutlined, AudioOutlined, AudioMutedOutlined, SendOutlined } from '@ant-design/icons';
 import api from '@/lib/api';
@@ -10,8 +11,10 @@ const { Title, Text } = Typography;
 const { Content } = Layout;
 
 export default function AIConversationPage() {
+  const navigate = useNavigate();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [textInput, setTextInput] = useState('');
   const [sttMode, setSttMode] = useState<SttMode>('browser');
   const store = useRoomStore();
@@ -24,7 +27,12 @@ export default function AIConversationPage() {
   const { startRecording, stopRecording, isRecording, isConnecting, requestTTS } = useAudioSocket(sessionId, {
     mode: sttMode,
     onResult: (text) => {
-      if (text) sendMessage(text);
+      const next = text.trim();
+      if (!next) return;
+      setTextInput((prev) => {
+        const base = prev.trim();
+        return base ? `${base} ${next}` : next;
+      });
     },
   });
 
@@ -45,7 +53,7 @@ export default function AIConversationPage() {
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => store.reset();
+    return () => useRoomStore.getState().reset();
   }, []);
 
   const startSession = async () => {
@@ -73,6 +81,19 @@ export default function AIConversationPage() {
     if (!msg) return;
     sendMessage(msg);
     setTextInput('');
+  };
+
+  const handleEndSession = async () => {
+    if (!sessionId || ending) return;
+    setEnding(true);
+    try {
+      await api.post(`/sessions/${sessionId}/end`);
+    } catch {
+      // Session might already be closed; continue to report.
+    }
+
+    useRoomStore.getState().reset();
+    navigate(`/scores/${sessionId}`);
   };
 
   if (!sessionId) {
@@ -108,15 +129,25 @@ export default function AIConversationPage() {
             </Text>
           </div>
         </div>
-        <Segmented
-          size="small"
-          value={sttMode}
-          onChange={(v) => setSttMode(v as SttMode)}
-          options={[
-            { label: 'Browser STT', value: 'browser' },
-            { label: 'Deepgram STT', value: 'deepgram' },
-          ]}
-        />
+        <div className="flex items-center gap-3">
+          <Segmented
+            size="small"
+            value={sttMode}
+            onChange={(v) => setSttMode(v as SttMode)}
+            options={[
+              { label: 'Browser STT', value: 'browser' },
+              { label: 'Deepgram STT', value: 'deepgram' },
+            ]}
+          />
+          <Button
+            danger
+            size="small"
+            loading={ending}
+            onClick={handleEndSession}
+          >
+            End Session
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}

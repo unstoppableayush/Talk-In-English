@@ -76,7 +76,14 @@ class ConnectionManager:
         """Publish a message to Redis so other pods can relay it."""
         if self._redis:
             envelope = json.dumps({"session_id": session_id, "payload": message})
-            await self._redis.publish("ws:broadcast", envelope)
+            try:
+                await self._redis.publish("ws:broadcast", envelope)
+            except Exception:
+                logger.warning(
+                    "Redis publish failed — continuing with local WebSocket broadcast only",
+                    exc_info=True,
+                )
+                self._redis = None
 
     # ── Connection lifecycle ──────────────────────────────────
 

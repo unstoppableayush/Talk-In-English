@@ -38,6 +38,7 @@ async def websocket_audio(
     session_id: str,
     token: str = Query(...),
     language: str = Query(default="en"),
+    auto_submit: bool = Query(default=False),
 ):
     """
     Audio streaming WebSocket.
@@ -108,8 +109,9 @@ async def websocket_audio(
                 except Exception:
                     break  # client disconnected
 
-                # On final utterance, persist as message and run pronunciation
-                if result.is_final and result.text.strip():
+                # On final utterance, optionally persist/broadcast as chat message.
+                # Default is disabled so client can review transcript before sending.
+                if auto_submit and result.is_final and result.text.strip():
                     msg_id = str(uuid.uuid4())
                     now = datetime.now(timezone.utc).isoformat()
 
@@ -248,6 +250,10 @@ async def websocket_audio(
 
                 elif event == "system.ping":
                     await ws.send_json({"event": "system.pong", "data": {}})
+
+                elif event == "audio.stt.flush":
+                    # Finalize current utterance so client gets final transcript quickly.
+                    await audio_queue.put(None)
 
     except (WebSocketDisconnect, RuntimeError):
         pass

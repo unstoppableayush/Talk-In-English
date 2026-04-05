@@ -1,9 +1,8 @@
 """
 Speech Service — STT / TTS / Pronunciation Analysis.
 
-Integrates with Deepgram for real-time Speech-to-Text and provides a TTS
-pipeline with ElevenLabs (primary) and OpenAI TTS (fallback). Designed
-for low-latency audio streaming over WebSockets.
+Provides a fallback STT chain (Deepgram -> Groq Whisper -> ElevenLabs)
+and a fallback TTS chain (ElevenLabs -> Deepgram -> OpenAI) for resilient audio flows.
 """
 
 from __future__ import annotations
@@ -11,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import wave
 from dataclasses import dataclass
 
 import httpx
@@ -48,12 +48,61 @@ class PronunciationScore:
     suggestions: list[str]
 
 
+def _pcm16le_to_wav(
+    audio_bytes: bytes,
+    *,
+    sample_rate: int = 16000,
+    channels: int = 1,
+) -> bytes:
+    """Wrap raw PCM16LE bytes in a WAV container for file-based STT APIs."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(2)  # 16-bit PCM
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(audio_bytes)
+    return buffer.getvalue()
+
+
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  Speech-to-Text — Deepgram real-time streaming                ║
+# ║  Speech-to-Text — provider implementations                    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 
-class DeepgramSTT:
+class STTProvider:
+    """Base interface for STT providers."""
+
+    name = "base"
+
+    async def transcribe_audio(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
+        raise NotImplementedError
+
+    async def transcribe_stream(
+        self,
+        audio_chunks: asyncio.Queue[bytes | None],
+        *,
+        language: str = "en",
+        model: str = "nova-3",
+    ):
+        """
+        Generic stream implementation for non-streaming providers:
+        buffer audio until end-of-stream, then emit one final transcript.
+        """
+        chunks: list[bytes] = []
+        while True:
+            chunk = await audio_chunks.get()
+            if chunk is None:
+                break
+            chunks.append(chunk)
+
+        if not chunks:
+            return
+
+        result = await self.transcribe_audio(b"".join(chunks), language=language)
+        yield result
+
+
+class DeepgramSTT(STTProvider):
     """
     Streams raw audio bytes to Deepgram using the official SDK (v6)
     and yields TranscriptionResult objects as partial/final results arrive.
@@ -61,6 +110,7 @@ class DeepgramSTT:
 
     def __init__(self) -> None:
         self._api_key = settings.DEEPGRAM_API_KEY
+        self.name = "deepgram"
 
     async def transcribe_stream(
         self,
@@ -76,10 +126,29 @@ class DeepgramSTT:
         """
         client = AsyncDeepgramClient(api_key=self._api_key)
         result_queue: asyncio.Queue[TranscriptionResult | None] = asyncio.Queue()
+        pending_segments: list[str] = []
+        pending_words: list[dict] = []
+
+        def _flush_pending(duration_ms: int) -> None:
+            final_text = " ".join(seg for seg in pending_segments if seg).strip()
+            if not final_text:
+                return
+            result_queue.put_nowait(TranscriptionResult(
+                text=final_text,
+                confidence=0.0,
+                words=pending_words.copy(),
+                duration_ms=duration_ms,
+                is_final=True,
+            ))
+            pending_segments.clear()
+            pending_words.clear()
 
         async with client.listen.v1.connect(
             model=model,
             language=language,
+            encoding="linear16",
+            sample_rate="16000",
+            channels="1",
             punctuate="true",
             smart_format="true",
             interim_results="true",
@@ -94,6 +163,7 @@ class DeepgramSTT:
                 alt = (msg.channel.alternatives or [None])[0]
                 if alt is None:
                     return
+                transcript = (alt.transcript or "").strip()
                 words = [
                     {
                         "word": w.word,
@@ -104,13 +174,27 @@ class DeepgramSTT:
                     }
                     for w in (alt.words or [])
                 ]
-                result_queue.put_nowait(TranscriptionResult(
-                    text=alt.transcript,
-                    confidence=alt.confidence,
-                    words=words,
-                    duration_ms=int(msg.duration * 1000),
-                    is_final=bool(msg.is_final),
-                ))
+                duration_ms = int(msg.duration * 1000)
+
+                # Deepgram emits multiple final chunks for one utterance.
+                # Accumulate them and emit a single final phrase on speech_final.
+                if msg.is_final and transcript:
+                    pending_segments.append(transcript)
+                    pending_words.extend(words)
+
+                if msg.speech_final:
+                    _flush_pending(duration_ms)
+                    return
+
+                # Send interim text so client can visualize progress.
+                if transcript and not msg.is_final:
+                    result_queue.put_nowait(TranscriptionResult(
+                        text=transcript,
+                        confidence=alt.confidence,
+                        words=words,
+                        duration_ms=duration_ms,
+                        is_final=False,
+                    ))
 
             def _on_error(error):
                 logger.error("Deepgram SDK error: %s", error)
@@ -131,13 +215,17 @@ class DeepgramSTT:
                             await connection.send_finalize()
                             # Give a moment for final results, then signal done
                             await asyncio.sleep(1.0)
+                            _flush_pending(0)
                             result_queue.put_nowait(None)
                             return
                         await connection.send_media(chunk)
                 except asyncio.CancelledError:
                     pass
-                except Exception:
-                    logger.error("Deepgram sender failed", exc_info=True)
+                except Exception as exc:
+                    if "ConnectionClosed" in type(exc).__name__:
+                        logger.info("Deepgram stream closed by remote side")
+                    else:
+                        logger.error("Deepgram sender failed", exc_info=True)
                 finally:
                     result_queue.put_nowait(None)
 
@@ -163,6 +251,7 @@ class DeepgramSTT:
 
     async def transcribe_audio(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
         """One-shot transcription for a complete audio file/buffer."""
+        wav_bytes = _pcm16le_to_wav(audio_bytes)
         url = (
             f"https://api.deepgram.com/v1/listen"
             f"?language={language}&model=nova-2&punctuate=true"
@@ -173,7 +262,7 @@ class DeepgramSTT:
         }
 
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, headers=headers, content=audio_bytes)
+            resp = await client.post(url, headers=headers, content=wav_bytes)
             resp.raise_for_status()
             data = resp.json()
 
@@ -199,8 +288,160 @@ class DeepgramSTT:
         )
 
 
+class GroqWhisperSTT(STTProvider):
+    """One-shot STT through Groq's Whisper-compatible OpenAI API."""
+
+    name = "groq"
+
+    def __init__(self) -> None:
+        self._client = AsyncOpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url="https://api.groq.com/openai/v1",
+        )
+
+    async def transcribe_audio(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
+        wav_bytes = _pcm16le_to_wav(audio_bytes)
+        response = await self._client.audio.transcriptions.create(
+            model="whisper-large-v3-turbo",
+            file=("audio.wav", wav_bytes, "audio/wav"),
+            language=language,
+        )
+
+        text = getattr(response, "text", "")
+        if not text and isinstance(response, dict):
+            text = str(response.get("text", ""))
+
+        return TranscriptionResult(
+            text=text,
+            confidence=0.0,
+            words=[],
+            duration_ms=0,
+            is_final=True,
+        )
+
+
+class ElevenLabsSTT(STTProvider):
+    """One-shot STT using ElevenLabs Speech to Text API."""
+
+    name = "elevenlabs"
+
+    def __init__(self) -> None:
+        self._api_key = settings.ELEVENLABS_API_KEY
+
+    async def transcribe_audio(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
+        wav_bytes = _pcm16le_to_wav(audio_bytes)
+        files = {
+            "file": ("audio.wav", wav_bytes, "audio/wav"),
+        }
+        data = {
+            "model_id": "scribe_v1",
+            "language_code": language,
+        }
+        headers = {
+            "xi-api-key": self._api_key,
+        }
+
+        async with httpx.AsyncClient(timeout=45) as client:
+            resp = await client.post(
+                "https://api.elevenlabs.io/v1/speech-to-text",
+                headers=headers,
+                data=data,
+                files=files,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+
+        text = str(payload.get("text", ""))
+        return TranscriptionResult(
+            text=text,
+            confidence=0.0,
+            words=[],
+            duration_ms=0,
+            is_final=True,
+        )
+
+
+_STT_MAP: dict[str, tuple[str, type[STTProvider]]] = {
+    "deepgram": ("DEEPGRAM_API_KEY", DeepgramSTT),
+    "groq": ("GROQ_API_KEY", GroqWhisperSTT),
+    "elevenlabs": ("ELEVENLABS_API_KEY", ElevenLabsSTT),
+}
+
+
+class FallbackSTT(STTProvider):
+    """
+    Tries STT providers in priority order and falls back on runtime errors.
+    """
+
+    def __init__(self) -> None:
+        self._providers: list[STTProvider] = []
+        order = [p.strip().lower() for p in settings.STT_PROVIDER_ORDER.split(",") if p.strip()]
+
+        for name in order:
+            entry = _STT_MAP.get(name)
+            if not entry:
+                logger.warning("Unknown STT provider '%s', skipping", name)
+                continue
+            key_attr, cls = entry
+            key_value = getattr(settings, key_attr, "")
+            if key_value:
+                self._providers.append(cls())
+                logger.info("STT provider '%s' registered (key present)", name)
+            else:
+                logger.info("STT provider '%s' skipped (no API key)", name)
+
+        if not self._providers:
+            logger.error("No STT providers configured! Set at least one STT API key.")
+
+    async def transcribe_audio(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
+        last_error: Exception | None = None
+        for provider in self._providers:
+            try:
+                return await provider.transcribe_audio(audio_bytes, language=language)
+            except Exception as exc:
+                logger.warning(
+                    "STT provider '%s' failed for one-shot transcription: %s — trying next",
+                    provider.name,
+                    exc,
+                )
+                last_error = exc
+
+        raise RuntimeError(
+            f"All STT providers failed. Last error: {last_error}"
+        ) from last_error
+
+    async def transcribe_stream(
+        self,
+        audio_chunks: asyncio.Queue[bytes | None],
+        *,
+        language: str = "en",
+        model: str = "nova-2",
+    ):
+        last_error: Exception | None = None
+        for provider in self._providers:
+            try:
+                async for result in provider.transcribe_stream(
+                    audio_chunks,
+                    language=language,
+                    model=model,
+                ):
+                    yield result
+                return
+            except Exception as exc:
+                logger.warning(
+                    "STT provider '%s' failed for streaming: %s — trying next",
+                    provider.name,
+                    exc,
+                )
+                last_error = exc
+
+        raise RuntimeError(
+            f"All STT providers failed. Last error: {last_error}"
+        ) from last_error
+
+
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  Text-to-Speech — ElevenLabs (primary) + OpenAI (fallback)   ║
+# ║  Text-to-Speech — fallback provider chain                     ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 
@@ -270,10 +511,38 @@ class OpenAITTS(TTSProvider):
         return buf.getvalue()
 
 
+class DeepgramTTS(TTSProvider):
+    """Generate speech audio from text using Deepgram Aura TTS."""
+
+    def __init__(self) -> None:
+        self._api_key = settings.DEEPGRAM_API_KEY
+        self.name = "deepgram"
+
+    async def synthesize(
+        self,
+        text: str,
+        model: str | None = None,
+        **kwargs: object,
+    ) -> bytes:
+        selected_model = model or settings.DEEPGRAM_TTS_MODEL
+        url = f"https://api.deepgram.com/v1/speak?model={selected_model}"
+        headers = {
+            "Authorization": f"Token {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {"text": text}
+
+        async with httpx.AsyncClient(timeout=45) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            return resp.content
+
+
 # ── TTS provider registry ────────────────────────────────────────
 
 _TTS_MAP: dict[str, tuple[str, type[TTSProvider]]] = {
     "elevenlabs": ("ELEVENLABS_API_KEY", ElevenLabsTTS),
+    "deepgram": ("DEEPGRAM_API_KEY", DeepgramTTS),
     "openai": ("OPENAI_API_KEY", OpenAITTS),
 }
 
@@ -383,6 +652,6 @@ class PronunciationAnalyzer:
 # ║  Singletons                                                   ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-stt_service = DeepgramSTT()
+stt_service = FallbackSTT()
 tts_service = FallbackTTS()
 pronunciation_analyzer = PronunciationAnalyzer()
