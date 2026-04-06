@@ -1,8 +1,8 @@
 name: Build and deploy a container to an Azure Web App (Redeploy)
 
 env:
-  AZURE_WEBAPP_NAME: TalkinEnglishServer  # set this to the name of your Azure Web App
-  PYTHON_VERSION: '3.10'
+  AZURE_WEBAPP_NAME: talkinenglish  # set this to the name of your Azure Web App
+  PYTHON_VERSION: '3.14'
 
 on:
   push:
