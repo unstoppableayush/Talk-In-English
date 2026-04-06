@@ -1,4 +1,4 @@
-name: Build and deploy a container to an Azure Web App
+name: Build and deploy a container to an Azure Web App (Redeploy)
 
 env:
   AZURE_WEBAPP_NAME: TalkinEnglishServer  # set this to the name of your Azure Web App
