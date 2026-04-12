@@ -237,7 +237,7 @@ export default function ScoreReportPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {Object.entries(feedback.dimension_feedback).map(([dimension, note]) => (
                   <div key={dimension} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
-                    <Text strong className="capitalize text-gray-700">{dimension.replaceAll('_', ' ')}</Text>
+                    <Text strong className="capitalize text-gray-700">{dimension.split('_').join(' ')}</Text>
                     <Paragraph className="!mb-0 !mt-2 text-gray-600 text-sm leading-relaxed">
                       {note}
                     </Paragraph>
