@@ -46,7 +46,11 @@ class Settings(BaseSettings):
     GOOGLE_TOKEN_CLOCK_SKEW_SECONDS: int = 10
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://talk-in-english.vercel.app",
+    ]
 
     # Session limits
     MAX_SPEAKERS_PER_ROOM: int = 5
