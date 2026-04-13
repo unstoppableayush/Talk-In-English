@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from uuid import uuid4
 
 from fastapi import WebSocket
 
@@ -40,6 +41,7 @@ class ConnectionManager:
         self._sessions: dict[str, SessionConnections] = {}
         self._redis = None
         self._pubsub_task: asyncio.Task | None = None
+        self._instance_id = uuid4().hex
 
     # ── Redis pub/sub (optional, for horizontal scaling) ──────
 
@@ -64,6 +66,8 @@ class ConnectionManager:
                     continue
                 try:
                     envelope = json.loads(raw_msg["data"])
+                    if envelope.get("source") == self._instance_id:
+                        continue
                     session_id = envelope["session_id"]
                     message = envelope["payload"]
                     await self._local_broadcast(session_id, message)
@@ -75,7 +79,13 @@ class ConnectionManager:
     async def _publish(self, session_id: str, message: dict) -> None:
         """Publish a message to Redis so other pods can relay it."""
         if self._redis:
-            envelope = json.dumps({"session_id": session_id, "payload": message})
+            envelope = json.dumps(
+                {
+                    "source": self._instance_id,
+                    "session_id": session_id,
+                    "payload": message,
+                }
+            )
             try:
                 await self._redis.publish("ws:broadcast", envelope)
             except Exception:
