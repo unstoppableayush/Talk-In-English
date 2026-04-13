@@ -7819,3 +7819,92 @@ WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind 
 2026-04-05T23:21:22 | INFO     | app.ws.connection_manager | Redis pub/sub enabled for WebSocket scaling
 2026-04-05T23:21:22 | INFO     | app.main | Redis connected successfully
 2026-04-05T23:21:22 | INFO     | app.main | Startup complete
+2026-04-14T02:15:05 | INFO     | app.main | Starting Speaking App...
+2026-04-14T02:15:05 | INFO     | app.main | Environment: development
+2026-04-14T02:15:05 | INFO     | app.main | Database host: aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres
+2026-04-14T02:15:05 | INFO     | app.main | CORS origins: ['http://localhost:5173', 'http://localhost:3000', 'https://talk-in-english.vercel.app']
+2026-04-14T02:15:08 | INFO     | sqlalchemy.engine.Engine | select pg_catalog.version()
+2026-04-14T02:15:08 | INFO     | sqlalchemy.engine.Engine | [raw sql] ()
+2026-04-14T02:15:08 | INFO     | sqlalchemy.engine.Engine | select current_schema()
+2026-04-14T02:15:08 | INFO     | sqlalchemy.engine.Engine | [raw sql] ()
+2026-04-14T02:15:09 | INFO     | sqlalchemy.engine.Engine | show standard_conforming_strings
+2026-04-14T02:15:09 | INFO     | sqlalchemy.engine.Engine | [raw sql] ()
+2026-04-14T02:15:10 | INFO     | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-04-14T02:15:10 | INFO     | sqlalchemy.engine.Engine | CREATE SCHEMA IF NOT EXISTS auth
+2026-04-14T02:15:10 | INFO     | sqlalchemy.engine.Engine | [generated in 0.00145s] ()
+2026-04-14T02:15:10 | INFO     | sqlalchemy.engine.Engine | CREATE SCHEMA IF NOT EXISTS sessions
+2026-04-14T02:15:10 | INFO     | sqlalchemy.engine.Engine | [generated in 0.00107s] ()
+2026-04-14T02:15:11 | INFO     | sqlalchemy.engine.Engine | CREATE SCHEMA IF NOT EXISTS eval
+2026-04-14T02:15:11 | INFO     | sqlalchemy.engine.Engine | [generated in 0.00675s] ()
+2026-04-14T02:15:11 | INFO     | sqlalchemy.engine.Engine | CREATE SCHEMA IF NOT EXISTS ai
+2026-04-14T02:15:11 | INFO     | sqlalchemy.engine.Engine | [generated in 0.00472s] ()
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | [generated in 0.00601s] ('app_users', 'r', 'p', 'f', 'v', 'm', 'public')
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | [cached since 0.409s ago] ('rooms', 'r', 'p', 'f', 'v', 'm', 'sessions')
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | [cached since 0.6165s ago] ('sessions', 'r', 'p', 'f', 'v', 'm', 'sessions')
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:12 | INFO     | sqlalchemy.engine.Engine | [cached since 0.8139s ago] ('room_participants', 'r', 'p', 'f', 'v', 'm', 'sessions')
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | [cached since 1.011s ago] ('messages', 'r', 'p', 'f', 'v', 'm', 'sessions')
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | [cached since 1.21s ago] ('session_scores', 'r', 'p', 'f', 'v', 'm', 'eval')
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | [cached since 1.41s ago] ('progress_snapshots', 'r', 'p', 'f', 'v', 'm', 'eval')
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | [cached since 1.631s ago] ('ai_feedback_reports', 'r', 'p', 'f', 'v', 'm', 'ai')
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:13 | INFO     | sqlalchemy.engine.Engine | [cached since 1.839s ago] ('ai_interactions', 'r', 'p', 'f', 'v', 'm', 'ai')
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | [cached since 2.038s ago] ('section_tests', 'r', 'p', 'f', 'v', 'm', 'eval')
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | [cached since 2.246s ago] ('test_attempts', 'r', 'p', 'f', 'v', 'm', 'eval')
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | [cached since 2.452s ago] ('leaderboard_entries', 'r', 'p', 'f', 'v', 'm', 'eval')
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | [cached since 2.642s ago] ('roleplay_scenarios', 'r', 'p', 'f', 'v', 'm', 'ai')
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:14 | INFO     | sqlalchemy.engine.Engine | [cached since 2.837s ago] ('roleplay_sessions', 'r', 'p', 'f', 'v', 'm', 'ai')
+2026-04-14T02:15:15 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:15 | INFO     | sqlalchemy.engine.Engine | [cached since 3.027s ago] ('roleplay_messages', 'r', 'p', 'f', 'v', 'm', 'ai')
+2026-04-14T02:15:15 | INFO     | sqlalchemy.engine.Engine | SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_namespace.nspname = $7::VARCHAR
+2026-04-14T02:15:15 | INFO     | sqlalchemy.engine.Engine | [cached since 3.219s ago] ('roleplay_evaluations', 'r', 'p', 'f', 'v', 'm', 'ai')
+2026-04-14T02:15:15 | INFO     | sqlalchemy.engine.Engine | COMMIT
+2026-04-14T02:15:15 | INFO     | app.main | Database schemas and tables ensured
+2026-04-14T02:15:15 | INFO     | app.main | Connecting to Redis...
+2026-04-14T02:15:16 | INFO     | app.ws.connection_manager | Redis pub/sub enabled for WebSocket scaling
+2026-04-14T02:15:16 | INFO     | app.main | Redis connected successfully
+2026-04-14T02:15:16 | INFO     | app.main | Startup complete
