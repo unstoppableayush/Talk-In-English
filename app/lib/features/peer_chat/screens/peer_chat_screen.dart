@@ -170,7 +170,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                   ),
                   filled: true,
                   fillColor: isDark
-                      ? Theme.of(context).colorScheme.background
+                      ? Theme.of(context).colorScheme.surface
                       : Colors.grey.shade100,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(30),

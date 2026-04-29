@@ -221,7 +221,7 @@ class _RoleplayScreenState extends State<RoleplayScreen> {
                       ),
                     ),
                   );
-                }).toList(),
+                }),
               ],
             ),
           const SizedBox(height: 24),

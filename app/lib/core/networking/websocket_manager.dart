@@ -88,6 +88,46 @@ class WebSocketManager {
     }
   }
 
+  /// Connect to session endpoint (JSON chat messages)
+  Future<void> connectToSession({
+    required String sessionId,
+    String role = 'speaker',
+    required Function(Map<String, dynamic>) onMessage,
+    required Function() onDisconnect,
+  }) async {
+    try {
+      final url =
+          '${ApiClient.wsUrl}/session/$sessionId?token=${ApiClient.token}&role=$role';
+      _channel = WebSocketChannel.connect(Uri.parse(url));
+      _channel!.stream.listen(
+        (message) {
+          if (message is String) {
+            try {
+              final json = jsonDecode(message);
+              onMessage(json);
+            } catch (e) {
+              print('Failed to decode session message: $message');
+            }
+          }
+        },
+        onDone: () {
+          _isConnected = false;
+          onDisconnect();
+        },
+        onError: (err) {
+          print('WebSocket error: $err');
+          _isConnected = false;
+          onDisconnect();
+        },
+      );
+      _isConnected = true;
+    } catch (e) {
+      print('Failed to connect to session WS: $e');
+      _isConnected = false;
+      rethrow;
+    }
+  }
+
   /// Send binary audio data
   void sendAudio(List<int> audioBytes) {
     if (!_isConnected || _channel == null) {

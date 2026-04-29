@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 class DashboardProvider extends ChangeNotifier {
-  int _dailyStreak = 5;
-  int _totalSpeakingMinutes = 120;
+  final int _dailyStreak = 5;
+  final int _totalSpeakingMinutes = 120;
   List<String> _recentActivities = [];
 
   int get dailyStreak => _dailyStreak;
