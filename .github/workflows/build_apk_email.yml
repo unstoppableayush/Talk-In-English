@@ -94,8 +94,7 @@ jobs:
             return folder["id"]
 
           root_folder_id = find_or_create_folder("Talk-in-english")
-          timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S_UTC")
-          build_folder_id = find_or_create_folder(timestamp, root_folder_id)
+          timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d_%H-%M-%S_UTC")
 
           apk_path = "app/build/app/outputs/flutter-apk/app-release.apk"
           media = MediaFileUpload(
@@ -104,8 +103,8 @@ jobs:
             resumable=True,
           )
           file_metadata = {
-            "name": "app-release.apk",
-            "parents": [build_folder_id],
+            "name": f"app-release-{timestamp}.apk",
+            "parents": [root_folder_id],
           }
           uploaded = service.files().create(
             body=file_metadata,
