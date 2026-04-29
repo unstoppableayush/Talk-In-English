@@ -11,6 +11,7 @@ jobs:
     env:
       GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
       GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+      GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
 
     steps:
       - name: Checkout
@@ -80,6 +81,10 @@ jobs:
               q=query,
               fields="files(id,name)",
               spaces="drive",
+              includeItemsFromAllDrives=True,
+              supportsAllDrives=True,
+              corpora="drive",
+              driveId=os.environ.get("GDRIVE_SHARED_DRIVE_ID"),
             ).execute()
             files = result.get("files", [])
             if files:
@@ -90,10 +95,18 @@ jobs:
             }
             if parent_id:
               metadata["parents"] = [parent_id]
-            folder = service.files().create(body=metadata, fields="id").execute()
+            folder = service.files().create(
+              body=metadata,
+              fields="id",
+              supportsAllDrives=True,
+            ).execute()
             return folder["id"]
 
-          root_folder_id = find_or_create_folder("Talk-in-english")
+          shared_drive_id = os.environ.get("GDRIVE_SHARED_DRIVE_ID")
+          if not shared_drive_id:
+            raise SystemExit("Missing shared drive ID")
+
+          root_folder_id = find_or_create_folder("Talk-in-english", shared_drive_id)
           timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d_%H-%M-%S_UTC")
 
           apk_path = "app/build/app/outputs/flutter-apk/app-release.apk"
@@ -110,6 +123,7 @@ jobs:
             body=file_metadata,
             media_body=media,
             fields="id,webViewLink,webContentLink",
+            supportsAllDrives=True,
           ).execute()
 
           service.permissions().create(
