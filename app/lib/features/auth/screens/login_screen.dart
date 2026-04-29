@@ -20,6 +20,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (authProvider.isAuthenticated && mounted) {
       context.go('/dashboard');
+      return;
+    }
+    if (mounted && authProvider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authProvider.errorMessage!)),
+      );
     }
   }
 
@@ -121,6 +127,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               await authProvider.loginWithGoogle();
                               if (authProvider.isAuthenticated && mounted) {
                                 context.go('/dashboard');
+                                return;
+                              }
+                              if (mounted &&
+                                  authProvider.errorMessage != null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(authProvider.errorMessage!),
+                                  ),
+                                );
                               }
                             },
                       icon: const Icon(Icons.g_mobiledata_rounded,

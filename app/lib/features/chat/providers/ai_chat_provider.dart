@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 import '../../../core/networking/websocket_manager.dart';
 import '../../../core/services/room_service.dart';
-import 'dart:async';
 
 class AiChatProvider extends ChangeNotifier {
-  final WebSocketManager _wsManager = WebSocketManager();
+  final WebSocketManager _sessionWsManager = WebSocketManager();
+  final WebSocketManager _audioWsManager = WebSocketManager();
   final RoomService _roomService = RoomService();
 
   bool _isConnected = false;
@@ -28,6 +28,7 @@ class AiChatProvider extends ChangeNotifier {
     if (_isStarting || _sessionId != null) return;
 
     _isStarting = true;
+    _isConnecting = true;
     notifyListeners();
 
     try {
@@ -40,10 +41,10 @@ class AiChatProvider extends ChangeNotifier {
       _sessionId = sessionId;
       debugPrint('Session created: $sessionId');
 
-      // Connect to WebSocket
-      await _wsManager.connectToAudio(
+      // Connect to session WebSocket for chat messages
+      await _sessionWsManager.connectToSession(
         sessionId: sessionId,
-        language: 'en',
+        role: 'speaker',
         onMessage: _handleIncomingMessage,
         onDisconnect: _handleDisconnect,
       );
@@ -55,6 +56,7 @@ class AiChatProvider extends ChangeNotifier {
       _isConnected = false;
     } finally {
       _isStarting = false;
+      _isConnecting = false;
       notifyListeners();
     }
   }
@@ -64,28 +66,19 @@ class AiChatProvider extends ChangeNotifier {
     final event = json['event'];
     final data = json['data'];
 
-    if (event == 'transcription.result' && data != null) {
-      final text = data['text'] ?? '';
-      if (text.isNotEmpty) {
-        _messages.add(
-          ChatMessage(
-            id: data['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-            text: text,
-            isUser: true,
-            timestamp: DateTime.now(),
-          ),
-        );
-        notifyListeners();
-      }
-    } else if (event == 'ai.response' && data != null) {
+    if (event == 'message.received' && data != null) {
       final text = data['content'] ?? '';
       if (text.isNotEmpty) {
+        final isUser = (data['sender_type'] ?? '') == 'user';
+        final createdAt = data['created_at'] as String?;
         _messages.add(
           ChatMessage(
             id: data['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
             text: text,
-            isUser: false,
-            timestamp: DateTime.now(),
+            isUser: isUser,
+            timestamp: createdAt != null
+                ? DateTime.tryParse(createdAt) ?? DateTime.now()
+                : DateTime.now(),
           ),
         );
         notifyListeners();
@@ -104,25 +97,17 @@ class AiChatProvider extends ChangeNotifier {
       debugPrint('Not connected to WebSocket');
       return;
     }
-    _wsManager.sendAudio(audioBytes);
+    _audioWsManager.sendAudio(audioBytes);
   }
 
   /// Send a text-based message (for testing without audio)
   void sendMessage(String text) {
     if (text.trim().isEmpty || !_isConnected) return;
 
-    final message = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: text,
-      isUser: true,
-      timestamp: DateTime.now(),
-    );
-
-    _messages.add(message);
-    notifyListeners();
-
-    // For now, just add to local messages. In real implementation,
-    // you'd convert text to audio frames and send via sendAudio()
+    _sessionWsManager.sendMessage({
+      'event': 'message.send',
+      'data': {'content': text.trim()},
+    });
   }
 
   void toggleRecording() {
@@ -145,6 +130,8 @@ class AiChatProvider extends ChangeNotifier {
       await _roomService.endSession(_sessionId!);
       _sessionId = null;
       _isConnected = false;
+      _sessionWsManager.disconnect();
+      _audioWsManager.disconnect();
       _messages.clear();
     } catch (e) {
       debugPrint('Failed to end session: $e');
@@ -155,7 +142,8 @@ class AiChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _wsManager.dispose();
+    _sessionWsManager.dispose();
+    _audioWsManager.dispose();
     super.dispose();
   }
 }
