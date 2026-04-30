@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-      GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
-      GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
 
     steps:
       - name: Checkout
@@ -41,103 +39,16 @@ jobs:
         working-directory: app
         run: flutter build apk --release
 
-      - name: Install Drive upload dependencies
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: speaking-app-release-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Set artifact link
+        id: artifact_link
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
-
-      - name: Upload APK to Google Drive
-        id: drive_upload
-        run: |
-          python - <<'PY'
-          import datetime
-          import json
-          import os
-
-          from google.oauth2.service_account import Credentials
-          from googleapiclient.discovery import build
-          from googleapiclient.http import MediaFileUpload
-
-          sa_json = os.environ.get("GDRIVE_SERVICE_ACCOUNT_JSON")
-          if not sa_json:
-            raise SystemExit("Missing Drive service account secret")
-
-          info = json.loads(sa_json)
-          creds = Credentials.from_service_account_info(
-            info,
-            scopes=["https://www.googleapis.com/auth/drive"],
-          )
-          service = build("drive", "v3", credentials=creds)
-
-          def find_or_create_folder(name: str, parent_id: str | None = None) -> str:
-            safe_name = name.replace("'", "\\'")
-            query = (
-              "mimeType='application/vnd.google-apps.folder' "
-              "and name='" + safe_name + "' and trashed=false"
-            )
-            if parent_id:
-              query += " and '" + parent_id + "' in parents"
-            result = service.files().list(
-              q=query,
-              fields="files(id,name)",
-              spaces="drive",
-              includeItemsFromAllDrives=True,
-              supportsAllDrives=True,
-              corpora="drive",
-              driveId=os.environ.get("GDRIVE_SHARED_DRIVE_ID"),
-            ).execute()
-            files = result.get("files", [])
-            if files:
-              return files[0]["id"]
-            metadata = {
-              "name": name,
-              "mimeType": "application/vnd.google-apps.folder",
-            }
-            if parent_id:
-              metadata["parents"] = [parent_id]
-            folder = service.files().create(
-              body=metadata,
-              fields="id",
-              supportsAllDrives=True,
-            ).execute()
-            return folder["id"]
-
-          shared_drive_id = os.environ.get("GDRIVE_SHARED_DRIVE_ID")
-          if not shared_drive_id:
-            raise SystemExit("Missing shared drive ID")
-
-          root_folder_id = find_or_create_folder("Talk-in-english", shared_drive_id)
-          timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d_%H-%M-%S_UTC")
-
-          apk_path = "app/build/app/outputs/flutter-apk/app-release.apk"
-          media = MediaFileUpload(
-            apk_path,
-            mimetype="application/vnd.android.package-archive",
-            resumable=True,
-          )
-          file_metadata = {
-            "name": f"app-release-{timestamp}.apk",
-            "parents": [root_folder_id],
-          }
-          uploaded = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields="id,webViewLink,webContentLink",
-            supportsAllDrives=True,
-          ).execute()
-
-          service.permissions().create(
-            fileId=uploaded["id"],
-            body={"type": "anyone", "role": "reader"},
-          ).execute()
-
-          link = uploaded.get("webViewLink") or uploaded.get("webContentLink")
-          if not link:
-            raise SystemExit("No Drive link generated")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-            fh.write(f"apk_link={link}\n")
-          PY
+          echo "apk_link=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
 
       - name: Email APK link
         uses: dawidd6/action-send-mail@v3
@@ -149,4 +60,4 @@ jobs:
           subject: "Speaking App - Release APK"
           to: ${{ secrets.SMTP_TO }}
           from: ${{ secrets.SMTP_FROM }}
-          body: "Latest release APK uploaded to Google Drive: ${{ steps.drive_upload.outputs.apk_link }}"
+          body: "Latest release APK artifact: ${{ steps.artifact_link.outputs.apk_link }}"
